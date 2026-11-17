@@ -81,7 +81,8 @@ python -m kiyakunote gui                                 # 画面を開く（run
 
 ```bash
 python -m pytest -q          # テスト
-python build_exe.py          # GUI を exe にする（PyInstaller が必要）
+python build_exe.py          # 手元で使う exe を作る（PyInstaller が必要）
+python build_release.py      # 配布版 dist/KiyakuNote-1.0-win.zip を作る（build_release.bat でも可）
 python tools/take_screenshots.py   # docs/images/ のスクリーンショットを作り直す（Pillow が必要）
 ```
 
