@@ -110,7 +110,7 @@ def load_revisions(path=None):
 
 
 def resolve(spec, revs=None):
-    """版の指定を git の参照に直す。'WORKTREE'、'@2026-06-01'（その日に有効な版）、gitの参照そのまま。"""
+    """版の指定を git の参照に直す。'WORKTREE'、'@2022-04-01'（その日に有効な版）、gitの参照そのまま。"""
     if spec == "WORKTREE" or spec.startswith("git:"):
         return spec.removeprefix("git:")
     if spec.startswith("@"):
@@ -134,15 +134,6 @@ def run_quiet(cmd, **kw):
     if sys.platform == "win32":
         kw.setdefault("creationflags", subprocess.CREATE_NO_WINDOW)
     return subprocess.run(cmd, **kw)
-
-
-def baseline_tags(repo=None, exclude=()):
-    """PDF原文に合わせて訂正した版のタグ（v…-pdf）のうち、改訂履歴（revisions.yaml）に入っていないもの。"""
-    try:
-        out = run_quiet(["git", "tag", "--list", "v*-pdf"], cwd=str(repo or ROOT)).stdout.decode("utf-8", "replace")
-    except Exception:                                           # noqa: BLE001
-        return []
-    return [t.strip() for t in out.splitlines() if t.strip() and t.strip() not in exclude]
 
 
 def load_version(ref, repo=ROOT):

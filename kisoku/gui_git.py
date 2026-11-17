@@ -52,7 +52,7 @@ class RegisterDialog(tk.Toplevel):
         f.pack(fill="x", padx=10, pady=10)
         self.res, self.eff, self.tag = tk.StringVar(), tk.StringVar(), tk.StringVar()
         self.tag_touched = False
-        rows = (("総会決議日（例 2027-04-18）:", self.res), ("施行日（例 2027-06-01）:", self.eff), ("タグ名（git）:", self.tag))
+        rows = (("総会決議日（例 2030-04-21）:", self.res), ("施行日（例 2030-06-01）:", self.eff), ("タグ名（git）:", self.tag))
         for r, (label, var) in enumerate(rows):
             ttk.Label(f, text=label).grid(row=r, column=0, sticky="w", pady=2)
             e = ttk.Entry(f, textvariable=var, width=24)

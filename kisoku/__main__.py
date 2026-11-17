@@ -2,7 +2,7 @@
   python -m kisoku lint <入力フォルダ>
   python -m kisoku build <入力フォルダ> -o <出力フォルダ>
   python -m kisoku compare <改正前> <改正後> [-o 出力ファイル]
-      版の指定: WORKTREE（作業中のsrc/）、@2026-06-01（その日に有効な版）、gitの参照（タグ・コミット）
+      版の指定: WORKTREE（作業中のsrc/）、@2022-04-01（その日に有効な版）、gitの参照（タグ・コミット）
   python -m kisoku revisions       版の一覧（src/revisions.yaml）
 """
 import argparse
@@ -154,7 +154,7 @@ def main(argv=None):
     for name in ("index", "search", "refs"):
         p = sub.add_parser(name)
         p.add_argument("--db", default=str(DB))
-        p.add_argument("--at", help="版の指定（@2026-06-01 など）。省略は作業中のsrc/")
+        p.add_argument("--at", help="版の指定（@2022-04-01 など）。省略は作業中のsrc/")
         p.add_argument("--rebuild", action="store_true", help="索引を作り直す")
         if name == "search":
             p.add_argument("query", nargs="+")

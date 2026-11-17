@@ -1,0 +1,5 @@
+python-docx>=1.1
+# 開発・配布用（なくても動きます）
+# pytest
+# pyinstaller   （build_exe.py で exe を作るとき）
+# pillow        （tools/take_screenshots.py でスクリーンショットを撮るとき）

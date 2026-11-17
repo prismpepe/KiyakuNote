@@ -60,9 +60,9 @@ def commit(repo, message, path="src"):
 def validate_revision(repo, resolution, effective, tag, revs=None):
     errors = []
     if not DATE.match(resolution):
-        errors.append("総会決議日は 2027-04-18 の形で入れてください")
+        errors.append("総会決議日は 2030-04-21 の形で入れてください")
     if not DATE.match(effective):
-        errors.append("施行日は 2027-06-01 の形で入れてください")
+        errors.append("施行日は 2030-06-01 の形で入れてください")
     for d in (resolution, effective):
         if DATE.match(d):
             try:
@@ -72,7 +72,7 @@ def validate_revision(repo, resolution, effective, tag, revs=None):
     if not errors and resolution > effective:
         errors.append("総会決議日が施行日より後になっています")
     if not re.match(r"^[A-Za-z0-9._-]+$", tag or ""):
-        errors.append("タグ名は英数字と . _ - だけで入れてください（例 v2027-06-01）")
+        errors.append("タグ名は英数字と . _ - だけで入れてください（例 v2030-06-01）")
     elif git(repo, "tag", "--list", tag):
         errors.append(f"タグ {tag} はすでにあります")
     revs = revs if revs is not None else load_revisions(Path(repo) / "src" / "revisions.yaml")

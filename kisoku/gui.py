@@ -16,7 +16,7 @@ from .core import APPENDIX_KINDS, Heading
 from .lint import lint
 from .render import article_text, render_doc
 from .search import build_index, doc_order, plain, refs_of, search, snippet
-from .versions import ROOT, baseline_tags, load_revisions, load_version
+from .versions import ROOT, load_revisions, load_version
 from . import gitops
 
 FONT = ("Yu Gothic UI", 10)
@@ -47,8 +47,6 @@ class App(tk.Tk):
         for r in self.revs:
             if r.get("ref"):
                 self.versions[f"{r['effective']} 施行（{r['ref']}）"] = r["ref"]
-        for t in baseline_tags(exclude={r.get("ref") for r in self.revs}):
-            self.versions[f"PDF原文に合わせた現行版（{t}）"] = t
         self.reg = None
         self.db = None
         self.tmp = Path(tempfile.mkdtemp(prefix="kisoku-gui-"))
@@ -404,8 +402,7 @@ class App(tk.Tk):
         vals = [v for v in self.versions]
         ttk.Label(top, text="改正前:").pack(side="left")
         self.c_old = ttk.Combobox(top, values=vals, state="readonly", width=34)
-        pdf = [v for v in vals if "-pdf" in v]
-        self.c_old.set(pdf[0] if pdf else vals[1] if len(vals) > 1 else vals[0])   # 既定の改正前: PDF原文に合わせた現行版
+        self.c_old.set(vals[-1] if len(vals) > 1 else vals[0])   # 既定の改正前: 条文を持つ最新の版
         self.c_old.pack(side="left", padx=4)
         ttk.Label(top, text="改正後:").pack(side="left", padx=(8, 0))
         self.c_new = ttk.Combobox(top, values=vals, state="readonly", width=34)
@@ -639,8 +636,6 @@ class App(tk.Tk):
         for r in self.revs:
             if r.get("ref"):
                 self.versions[f"{r['effective']} 施行（{r['ref']}）"] = r["ref"]
-        for t in baseline_tags(exclude={r.get("ref") for r in self.revs}):
-            self.versions[f"PDF原文に合わせた現行版（{t}）"] = t
         vals = list(self.versions)
         for cb in (self.ver, self.c_old, self.c_new):
             cb["values"] = vals
