@@ -135,6 +135,12 @@ def cmd_revisions(a):
 
 
 def main(argv=None):
+    # 日本語を出せない文字コードのコンソール（英語環境の Windows、リダイレクトなど）でも落ちないようにする
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:                                       # noqa: BLE001
+            pass
     from . import __version__
     ap = argparse.ArgumentParser(prog="kiyakunote", description="規約ノート（KiyakuNote） マンション管理規約 編集・改正履歴管理システム")
     ap.add_argument("--version", action="version", version=f"規約ノート KiyakuNote {__version__}")
