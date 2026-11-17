@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+out/
+app/
+build/
+dist/
+*.spec
+
+# 自分の規約を扱うときは、実データを公開リポジトリに入れない（非公開のリポジトリで管理する）。
+# 例: src/ を非公開リポジトリにする、または private/ に置く。
+private/
+*.local.md

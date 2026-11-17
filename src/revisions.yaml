@@ -1,0 +1,9 @@
+# 版（改正）の一覧。resolution=総会決議日、effective=施行日、ref=その版の条文を持つgitの参照（空なら記録のみ）
+revisions:
+  - resolution: 2018-03-18
+    effective: 2018-04-01
+    ref: v2018-04-01
+    note: 規約の制定
+    changes:
+      - サンプルハイツ管理規約 制定
+      - 駐車場使用細則 制定
