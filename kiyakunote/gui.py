@@ -1,7 +1,7 @@
 """Windows のGUI（Tkinter）。検索・条文の閲覧・整合性チェック・新旧対照表・Word出力・版の一覧。
 
-起動: python -m kisoku gui  （または 管理規約システム.pyw をダブルクリック）
-画面の操作はすべて、コマンドラインと同じ処理（kisoku の各モジュール）を呼ぶ。
+起動: python -m kiyakunote gui  （または KiyakuNote.pyw をダブルクリック）
+画面の操作はすべて、コマンドラインと同じ処理（kiyakunote の各モジュール）を呼ぶ。
 """
 import re
 import subprocess
@@ -16,6 +16,7 @@ from .core import APPENDIX_KINDS, Heading
 from .lint import lint
 from .render import article_text, render_doc
 from .search import build_index, doc_order, plain, refs_of, search, snippet
+from . import APP_DESCRIPTION, APP_NAME, __version__
 from .versions import ROOT, load_revisions, load_version
 from . import gitops
 
@@ -38,7 +39,7 @@ LINT_HELP = {
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("マンション管理規約システム")
+        self.title(f"{APP_NAME} {__version__}")
         self.geometry("1180x760")
         self.option_add("*Font", FONT)
         ttk.Style(self).configure("Treeview", rowheight=22, font=FONT)
@@ -49,7 +50,7 @@ class App(tk.Tk):
                 self.versions[f"{r['effective']} 施行（{r['ref']}）"] = r["ref"]
         self.reg = None
         self.db = None
-        self.tmp = Path(tempfile.mkdtemp(prefix="kisoku-gui-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="kiyakunote-gui-"))
         self.repo = ROOT
         self.undo = []                  # 保存前のファイル内容 [(パス, 内容)]。元に戻す用
         self.cmp_rows = []
@@ -92,6 +93,13 @@ class App(tk.Tk):
         self.ver.pack(side="left", padx=4)
         self.ver.bind("<<ComboboxSelected>>", lambda e: self.load_version())
         ttk.Button(f, text="読み直す", command=self.load_version).pack(side="left", padx=4)
+        ttk.Button(f, text="バージョン情報", command=self.about).pack(side="right", padx=2)
+        ttk.Label(f, text=f"{APP_NAME}（KiyakuNote）  バージョン {__version__}", foreground="#555").pack(side="right", padx=8)
+
+    def about(self):
+        lines = [f"{APP_NAME}（KiyakuNote）", f"バージョン {__version__}", "", APP_DESCRIPTION, "",
+                 "Copyright (c) 2026 prismpepe", "MIT License", "https://github.com/prismpepe/KiyakuNote"]
+        messagebox.showinfo("バージョン情報", chr(10).join(lines))
 
     def load_version(self):
         ref = self.versions[self.ver.get()]

@@ -6,8 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from kisoku.core import Registry, load_dir  # noqa: E402
-from kisoku.search import build_index, refs_of, search  # noqa: E402
+from kiyakunote.core import Registry, load_dir  # noqa: E402
+from kiyakunote.search import build_index, refs_of, search  # noqa: E402
 
 
 class SearchTest(unittest.TestCase):

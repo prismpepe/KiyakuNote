@@ -9,11 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from kisoku.compare import compare_doc  # noqa: E402
-from kisoku.core import Registry, load_dir  # noqa: E402
-from kisoku.lint import lint  # noqa: E402
-from kisoku.render import article_text  # noqa: E402
-from kisoku.versions import load_revisions, load_version, resolve  # noqa: E402
+from kiyakunote.compare import compare_doc  # noqa: E402
+from kiyakunote.core import Registry, load_dir  # noqa: E402
+from kiyakunote.lint import lint  # noqa: E402
+from kiyakunote.render import article_text  # noqa: E402
+from kiyakunote.versions import load_revisions, load_version, resolve  # noqa: E402
 
 
 def label(a):

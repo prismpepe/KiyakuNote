@@ -1,4 +1,4 @@
-"""GUIの、変更の記録（git）と版の登録のダイアログ。処理本体は kisoku.gitops。"""
+"""GUIの、変更の記録（git）と版の登録のダイアログ。処理本体は kiyakunote.gitops。"""
 import tkinter as tk
 from tkinter import messagebox, ttk
 

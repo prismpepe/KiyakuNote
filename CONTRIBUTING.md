@@ -15,7 +15,7 @@ Issue や Pull Request を歓迎します（日本語でも英語でも構いま
 ```bash
 pip install -r requirements.txt pytest
 python -m pytest -q
-python -m kisoku lint src
+python -m kiyakunote lint src
 ```
 
 ## 範囲外のこと

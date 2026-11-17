@@ -1,9 +1,9 @@
 """使い方:
-  python -m kisoku lint <入力フォルダ>
-  python -m kisoku build <入力フォルダ> -o <出力フォルダ>
-  python -m kisoku compare <改正前> <改正後> [-o 出力ファイル]
+  python -m kiyakunote lint <入力フォルダ>
+  python -m kiyakunote build <入力フォルダ> -o <出力フォルダ>
+  python -m kiyakunote compare <改正前> <改正後> [-o 出力ファイル]
       版の指定: WORKTREE（作業中のsrc/）、@2022-04-01（その日に有効な版）、gitの参照（タグ・コミット）
-  python -m kisoku revisions       版の一覧（src/revisions.yaml）
+  python -m kiyakunote revisions       版の一覧（src/revisions.yaml）
 """
 import argparse
 import sys
@@ -135,7 +135,9 @@ def cmd_revisions(a):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="kisoku")
+    from . import __version__
+    ap = argparse.ArgumentParser(prog="kiyakunote", description="規約ノート（KiyakuNote） マンション管理規約 編集・改正履歴管理システム")
+    ap.add_argument("--version", action="version", version=f"規約ノート KiyakuNote {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("lint", "build"):
         p = sub.add_parser(name)

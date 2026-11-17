@@ -13,7 +13,7 @@ class GuiSmoke(unittest.TestCase):
             tkinter.Tk().destroy()
         except Exception:
             self.skipTest("画面が使えない")
-        from kisoku.gui import App
+        from kiyakunote.gui import App
         app = App()
         try:
             app.s_q.insert(0, "駐車場 使用料")

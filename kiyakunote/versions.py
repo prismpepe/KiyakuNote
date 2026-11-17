@@ -16,7 +16,7 @@ from .core import Registry, load_dir
 # 実行ファイル（PyInstaller）にしたときは、exeのあるフォルダを作業フォルダ（src/ がある所）とする
 if getattr(__import__("sys"), "frozen", False):
     _exe = Path(__import__("sys").executable).resolve().parent
-    # exe のあるフォルダ、またはその上位（app/管理規約システム/ からプロジェクトへ）で src/ がある所
+    # exe のあるフォルダ、またはその上位（app/KiyakuNote/ からプロジェクトへ）で src/ がある所
     ROOT = next((c for c in (_exe, _exe.parent, _exe.parent.parent) if (c / "src").is_dir()), _exe)
 else:
     ROOT = Path(__file__).resolve().parent.parent
@@ -142,7 +142,7 @@ def load_version(ref, repo=ROOT):
         return Registry(load_dir(repo / "src"))
     names = run_quiet(["git", "ls-tree", "-r", "--name-only", ref, "src/"], cwd=repo,
                       check=True).stdout.decode("utf-8").split("\n")
-    tmp = Path(tempfile.mkdtemp(prefix="kisoku-"))
+    tmp = Path(tempfile.mkdtemp(prefix="kiyakunote-"))
     for n in names:
         n = n.strip().strip('"')
         if not n.endswith(".md"):

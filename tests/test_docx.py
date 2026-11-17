@@ -9,8 +9,8 @@ from docx import Document
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from kisoku.core import Registry, load_dir  # noqa: E402
-from kisoku.docx_out import build_compare_docx, build_docx  # noqa: E402
+from kiyakunote.core import Registry, load_dir  # noqa: E402
+from kiyakunote.docx_out import build_compare_docx, build_docx  # noqa: E402
 
 
 def text_of(path):

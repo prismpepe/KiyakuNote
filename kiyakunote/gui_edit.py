@@ -1,4 +1,4 @@
-"""GUIの編集ダイアログ（条の変更・新設・参照の挿入）。処理本体は kisoku.edit。"""
+"""GUIの編集ダイアログ（条の変更・新設・参照の挿入）。処理本体は kiyakunote.edit。"""
 import shutil
 import tkinter as tk
 from pathlib import Path

@@ -5,7 +5,7 @@
 - 「…」の中（他の条文を引用した読み替え）
 - 前号・次号・本条（相対で、条番号が動いても壊れない）
 - 対象が見つからないもの、「同条」の指す先が決められないもの
-python -m kisoku.idify [src] [--doc kiyaku] [--dry]
+python -m kiyakunote.idify [src] [--doc kiyaku] [--dry]
 """
 import re
 import sys

@@ -8,8 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from kisoku import edit, gitops  # noqa: E402
-from kisoku.versions import dump_revisions, load_revisions, load_version, resolve  # noqa: E402
+from kiyakunote import edit, gitops  # noqa: E402
+from kiyakunote.versions import dump_revisions, load_revisions, load_version, resolve  # noqa: E402
 
 
 def sh(repo, *a):

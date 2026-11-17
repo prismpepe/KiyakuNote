@@ -6,9 +6,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from kisoku.core import Registry, load_dir  # noqa: E402
-from kisoku.lint import lint  # noqa: E402
-from kisoku.render import render_doc  # noqa: E402
+from kiyakunote.core import Registry, load_dir  # noqa: E402
+from kiyakunote.lint import lint  # noqa: E402
+from kiyakunote.render import render_doc  # noqa: E402
 
 
 def norm(s):

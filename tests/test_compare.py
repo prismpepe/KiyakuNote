@@ -7,8 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from kisoku.compare import compare_doc, render_table  # noqa: E402
-from kisoku.core import Registry, load_dir  # noqa: E402
+from kiyakunote.compare import compare_doc, render_table  # noqa: E402
+from kiyakunote.core import Registry, load_dir  # noqa: E402
 
 
 class CompareTest(unittest.TestCase):

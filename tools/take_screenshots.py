@@ -18,7 +18,14 @@ except Exception:                                        # noqa: BLE001
 
 from PIL import ImageGrab  # noqa: E402
 
-from kisoku.gui import App  # noqa: E402
+from kiyakunote.gui import App  # noqa: E402
+
+from tkinter import messagebox  # noqa: E402
+
+# 誤りを見せる撮影のとき、読み込みのエラー画面が出て止まらないようにする
+messagebox.showerror = lambda *a, **k: None
+messagebox.showinfo = lambda *a, **k: None
+messagebox.showwarning = lambda *a, **k: None
 
 
 def grab(win, name):

@@ -1,4 +1,6 @@
-# kisoku — マンション管理規約の保守システム
+# 規約ノート（KiyakuNote）
+
+**マンション管理規約 編集・改正履歴管理システム** — バージョン 1.0
 
 マンション管理規約（細則・使用細則を含む）を **Markdown + git** で管理し、条文の追加・削除・変更、
 **新旧対照表の自動生成**、**参照条項の自動更新**、検索、Word 出力ができる、Windows 向けのオープンソースのツールです。
@@ -18,6 +20,13 @@
 - **GUI。** コマンドを打たずに、Windows の画面で閲覧・検索・編集・対照表・版の登録ができます。
 - 枝番（第5条の2、項の「４の２」、号の「（３）の２」）、削除条（番号の枠を残す）、附則の「１．」形式の項に対応。
 
+## ダウンロード
+
+[Releases](https://github.com/prismpepe/KiyakuNote/releases) の `KiyakuNote-1.0-win.zip`（Windows 用の exe 版。Python は不要）を展開して、
+`KiyakuNote\KiyakuNote.exe` を起動します。署名のない exe なので、初回は Windows の警告（SmartScreen）が出ることがあります
+（「詳細情報」→「実行」）。ソースから動かすときは下の「クイックスタート」です。
+過去の版（git のタグ）を使う機能は、リポジトリをクローンしたときに使えます（exe 版の zip には git の履歴が入っていません）。
+
 ## 動作環境
 
 - Python 3.10 以上（tkinter 付き。Windows 版の標準の Python で入っています）
@@ -27,15 +36,15 @@
 ## クイックスタート
 
 ```bash
-git clone <このリポジトリ>
-cd <フォルダ>
+git clone https://github.com/prismpepe/KiyakuNote.git
+cd KiyakuNote
 pip install -r requirements.txt
 
-python -m kisoku lint src                            # 整合性チェック
-python -m kisoku build src -o out/build              # 番号・参照を展開した Markdown を出す
-python -m kisoku compare @2018-04-01 @2022-04-01 -o out/対照表.md   # 新旧対照表
-python -m kisoku search 駐車場 --at @2018-04-01     # 過去の版を検索
-python -m kisoku gui                                 # 画面を開く（run_gui.bat でも可）
+python -m kiyakunote lint src                            # 整合性チェック
+python -m kiyakunote build src -o out/build              # 番号・参照を展開した Markdown を出す
+python -m kiyakunote compare @2018-04-01 @2022-04-01 -o out/対照表.md   # 新旧対照表
+python -m kiyakunote search 駐車場 --at @2018-04-01     # 過去の版を検索
+python -m kiyakunote gui                                 # 画面を開く（run_gui.bat でも可）
 ```
 
 `src/` には、**架空のマンション「サンプルハイツ」の管理規約**（2018年制定・2022年改正の2版）と駐車場使用細則が
@@ -49,7 +58,7 @@ python -m kisoku gui                                 # 画面を開く（run_gui
    （実データを公開リポジトリに入れないでください。`.gitignore` の `private/` も使えます）。
 2. 記法は [docs/仕様書.md](docs/仕様書.md)、操作は [docs/取扱説明書.md](docs/取扱説明書.md) を見てください。
 3. 既存の規約（Word・PDF・テキスト）を Markdown に移す作業は手作業です。条の分割・ID の付与・参照の置き換えを
-   助ける `python -m kisoku.idify`（「前条」「第5条第2項」などを ID の参照に変換）があります。
+   助ける `python -m kiyakunote.idify`（「前条」「第5条第2項」などを ID の参照に変換）があります。
 
 ## ドキュメント
 

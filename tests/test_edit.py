@@ -7,10 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from kisoku import edit  # noqa: E402
-from kisoku.core import Registry, load_dir  # noqa: E402
-from kisoku.lint import lint  # noqa: E402
-from kisoku.render import article_text  # noqa: E402
+from kiyakunote import edit  # noqa: E402
+from kiyakunote.core import Registry, load_dir  # noqa: E402
+from kiyakunote.lint import lint  # noqa: E402
+from kiyakunote.render import article_text  # noqa: E402
 
 
 class EditTest(unittest.TestCase):
@@ -101,12 +101,12 @@ if __name__ == "__main__":
 
 class PlainTextTest(unittest.TestCase):
     def test_plain_lines_become_paragraphs(self):
-        from kisoku.edit import text_to_paras
+        from kiyakunote.edit import text_to_paras
         paras, errs = text_to_paras("第一の文である。\n第二の文である。", "art-x", set())
         self.assertEqual(errs, [])
         self.assertEqual([p.text for p in paras], ["第一の文である。", "第二の文である。"])
 
     def test_error_message_explains(self):
-        from kisoku.edit import text_to_paras
+        from kiyakunote.edit import text_to_paras
         _, errs = text_to_paras("書き出しに項がない\n項 本文", "art-x", set())
         self.assertIn("項", errs[0])
