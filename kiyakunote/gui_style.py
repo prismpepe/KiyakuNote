@@ -9,6 +9,7 @@ from tkinter import ttk
 from . import settings
 
 NAVY = "#1f4e79"
+GO = "#2e7d32"
 TAB_OFF = "#d6e0ec"
 TAB_HOVER = "#b9cde4"
 BTN = "#e4ecf6"
@@ -90,8 +91,8 @@ class Styler:
                      relief="raised")
         st.map("TButton", background=[("pressed", "#a9c4e4"), ("active", BTN_HOVER), ("disabled", "#e8e8e8")],
                foreground=[("disabled", "#888888")])
-        st.configure("Accent.TButton", font=self.f_ui_bold, padding=(10, 4), background=NAVY, foreground="#ffffff")
-        st.map("Accent.TButton", background=[("pressed", "#0f2f4f"), ("active", "#2b6aa5")],
+        st.configure("Accent.TButton", font=self.f_ui_bold, padding=(10, 4), background=GO, foreground="#ffffff")       # 実行ボタン（タブの選択色と違う色）
+        st.map("Accent.TButton", background=[("pressed", "#1b4d1f"), ("active", "#3d8c43")],
                foreground=[("disabled", "#cccccc"), ("!disabled", "#ffffff")])
         st.configure("TEntry", font=self.f_input, padding=3, fieldbackground=PAPER)
         st.configure("TCombobox", font=self.f_input, padding=3, fieldbackground=PAPER)
