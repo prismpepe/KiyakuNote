@@ -152,6 +152,14 @@ class App(tk.Tk):
         ttk.Button(bar, text="この条を削除…", command=self.delete_selected).pack(side="left", padx=2)
         ttk.Button(bar, text="直前の保存を元に戻す", command=self.undo_last).pack(side="left", padx=14)
         ttk.Label(bar, text="（編集は「作業中の src/」を表示しているときだけできます）", style="Hint.TLabel").pack(side="left")
+        bar2 = ttk.Frame(f)
+        bar2.pack(fill="x", pady=(0, 4))
+        ttk.Label(bar2, text="別表・別紙・別図:", style="Hint.TLabel").pack(side="left", padx=(4, 6))
+        ttk.Button(bar2, text="表を編集…", command=self.appendix_edit_table).pack(side="left", padx=2)
+        ttk.Button(bar2, text="画像を差し替え…", command=self.appendix_replace_image).pack(side="left", padx=2)
+        ttk.Button(bar2, text="新設…", command=self.appendix_new).pack(side="left", padx=2)
+        ttk.Button(bar2, text="削除…", command=self.appendix_delete).pack(side="left", padx=2)
+        ttk.Label(bar2, text="（左の一覧で別表・別紙・別図を選んでから）", style="Hint.TLabel").pack(side="left", padx=8)
         pw = ttk.PanedWindow(f, orient="horizontal")
         pw.pack(fill="both", expand=True)
         left = ttk.Frame(pw)
@@ -315,6 +323,103 @@ class App(tk.Tk):
         did, aid = sel[0].split("|", 1)
         return did, next((a for a in self.reg.docs[did].articles if a.id == aid), None)
 
+    def selected_appendix(self):
+        """左の一覧で選んでいる別表・別紙・別図の文書。選んでいなければ案内を出して None。"""
+        sel = self.tree.selection()
+        d = self.reg.docs.get(sel[0]) if sel and "|" not in sel[0] else None
+        if d is None or d.kind not in APPENDIX_KINDS:
+            messagebox.showinfo("別表・別紙・別図を選んでください", "左の一覧で、別表・別紙・別図（一覧の下のほう）を選んでください。")
+            return None
+        if d.meta.get("deleted") == "true":
+            messagebox.showinfo("削除済み", "この別表・別紙・別図は削除されています。")
+            return None
+        return d
+
+    def after_appendix(self, did, msg):
+        self.load_version()
+        found = lint(self.reg)
+        e = sum(1 for f in found if f[0] == "E")
+        if self.tree.exists(did):
+            self.tree.selection_set(did)
+            self.tree.see(did)
+            self.on_tree()
+        self.update_git_state()
+        self.done(f"{msg}。整合性チェック: エラー {e} 件、警告 {len(found) - e} 件" + ("（「整合性チェック」タブで確認してください）" if e else ""))
+        if e:
+            self.do_lint()
+
+    def appendix_edit_table(self):
+        if not self.can_edit():
+            return
+        d = self.selected_appendix()
+        if d is None:
+            return
+        from .tables import list_tables
+        if not list_tables(d.raw_body):
+            messagebox.showinfo("表がありません", "この文書には表がありません（画像の別紙・別図は「画像を差し替え…」）。")
+            return
+        from .gui_appendix import TableEditDialog
+        TableEditDialog(self, d)
+
+    def appendix_replace_image(self):
+        if not self.can_edit():
+            return
+        d = self.selected_appendix()
+        if d is None:
+            return
+        from . import appendix_edit as ae
+        imgs = ae.images_in(d.raw_body)
+        if not imgs:
+            messagebox.showinfo("画像がありません", "この文書には画像がありません（表は「表を編集…」）。")
+            return
+        index = 0
+        if len(imgs) > 1:
+            from tkinter import simpledialog
+            n = simpledialog.askinteger("画像の選択", f"画像が {len(imgs)} 枚あります。何枚目を差し替えますか？", minvalue=1, maxvalue=len(imgs), parent=self)
+            if not n:
+                return
+            index = n - 1
+        p = filedialog.askopenfilename(title="新しい画像を選ぶ", filetypes=[("画像", "*.png *.jpg *.jpeg *.gif *.webp")])
+        if not p:
+            return
+        path = Path(d.path)
+        old = path.read_bytes()
+        try:
+            ae.replace_image(path, index, p)
+        except ae.AppendixError as e:
+            messagebox.showerror("差し替えられません", str(e))
+            return
+        self.undo.append((path, old))
+        self.after_appendix(d.id, "画像を差し替えました（古い画像のファイルは assets に残しています）")
+
+    def appendix_new(self):
+        if not self.can_edit():
+            return
+        from .gui_appendix import NewAppendixDialog
+        NewAppendixDialog(self)
+
+    def appendix_delete(self):
+        if not self.can_edit():
+            return
+        d = self.selected_appendix()
+        if d is None:
+            return
+        n = self.reg.appendix_no(d)
+        label = "別図" if d.kind == "別図" else (f"別表第{n}" if d.kind == "別表" else f"{d.kind}{n}")
+        if not messagebox.askyesno("削除", f"{label}（{d.title}）を削除します。\n番号の枠とIDは残り、本文は空になります（番号は詰めません）。\n"
+                                         "この別表・別紙を参照している箇所は、整合性チェックでエラーになります。\n\n続けますか？"):
+            return
+        from . import appendix_edit as ae
+        path = Path(d.path)
+        old = path.read_bytes()
+        try:
+            ae.delete_appendix(path)
+        except ae.AppendixError as e:
+            messagebox.showerror("削除できません", str(e))
+            return
+        self.undo.append((path, old))
+        self.after_appendix(d.id, f"{label}を削除しました")
+
     def can_edit(self):
         if self.versions[self.ver.get()] != "WORKTREE":
             messagebox.showinfo("編集できません", "編集できるのは「作業中の src/」を表示しているときだけです。")
@@ -368,10 +473,15 @@ class App(tk.Tk):
         if not self.undo:
             messagebox.showinfo("元に戻す", "元に戻せる保存がありません。")
             return
-        path, old = self.undo.pop()
-        path.write_bytes(old)
+        entry = self.undo.pop()
+        pairs = entry if isinstance(entry, list) else [entry]
+        for path, old in pairs:
+            if old is None:                                      # 新設したファイルは消す
+                Path(path).unlink(missing_ok=True)
+            else:
+                Path(path).write_bytes(old)
         self.load_version()
-        self.done(f"元に戻しました: {path.name}")
+        self.done(f"元に戻しました: {Path(pairs[0][0]).name}")
 
     def after_edit(self, did, art_id):
         """保存のあとに読み直し、チェックの結果を状態欄に出す。"""
