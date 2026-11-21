@@ -128,3 +128,76 @@ def register_revision(repo, resolution, effective, tag, changes, note="", messag
     git(repo, "add", "--", "src/revisions.yaml")
     git(repo, "commit", "-m", message or f"{effective} 施行の版を登録した（{tag}）")
     return tag
+
+
+# ---- 変更履歴・復元・設定（GUIの「変更履歴」タブから使う） ----
+class GitIdentityError(GitError):
+    """git の利用者名・メールが未設定。"""
+
+
+def commit_safe(repo, message, path="src"):
+    """commit と同じ。利用者名が未設定のときは GitIdentityError を出す（画面で設定を案内するため）。"""
+    try:
+        return commit(repo, message, path)
+    except GitError as e:
+        s = str(e)
+        if "tell me who you are" in s or "empty ident" in s or "user.name" in s or "user.email" in s:
+            raise GitIdentityError("git の利用者名とメールアドレスが未設定です。") from e
+        raise
+
+
+def user_identity(repo):
+    """(名前, メール)。未設定は空文字。"""
+    return (git(repo, "config", "user.name", check=False), git(repo, "config", "user.email", check=False))
+
+
+def set_user_identity(name, email, repo=None):
+    """利用者名・メールを、この利用者のgit全体の設定（--global）にする。"""
+    name, email = name.strip(), email.strip()
+    if not name or "@" not in email:
+        raise GitError("名前と、@ を含むメールアドレスを入れてください")
+    git(repo or ".", "config", "--global", "user.name", name)
+    git(repo or ".", "config", "--global", "user.email", email)
+
+
+def log(repo, limit=300, path="src"):
+    """記録の履歴 [{id, date, message, tags}]。新しい順。"""
+    out = git(repo, "log", f"-n{limit}", "--date=format:%Y-%m-%d %H:%M", "--pretty=format:%h%x09%ad%x09%s%x09%D", "--", path)
+    rows = []
+    for ln in out.splitlines():
+        parts = ln.split("\t")
+        if len(parts) < 3:
+            continue
+        deco = parts[3] if len(parts) > 3 else ""
+        tags = [x.strip()[5:] for x in deco.split(",") if x.strip().startswith("tag: ")]
+        rows.append({"id": parts[0], "date": parts[1], "message": parts[2], "tags": tags})
+    return rows
+
+
+def diff_text(repo, rev=None, path="src", limit=300000):
+    """変更の内容（unified diff）。rev=None は「未記録の変更」、rev を指定するとその記録での変更。"""
+    if rev:
+        out = git(repo, "show", "--date=format:%Y-%m-%d %H:%M", "--stat", "--patch", "--format=【%h】%ad%n%s%n", rev, "--", path)
+    else:
+        out = git(repo, "diff", "HEAD", "--stat", "--patch", "--", path)
+        new = [p for st, p in changed_files(repo, path) if st in ("?", "??")]
+        if new:
+            out += "\n\n（まだ記録されていない新しいファイル）\n" + "\n".join("  + " + p for p in new)
+    return out[:limit] + ("\n…（長いので途中までです）" if len(out) > limit else "")
+
+
+def discard_changes(repo, path="src"):
+    """未記録の変更をすべて捨てて、最後に記録した状態に戻す（元に戻せない）。"""
+    git(repo, "checkout", "HEAD", "--", path)
+    git(repo, "clean", "-fd", "--", path)
+
+
+def restore_to(repo, rev, path="src"):
+    """path の中身を、記録 rev の状態にする（未記録の変更として残るので、あとで「変更を記録」する）。"""
+    if changed_files(repo, path):
+        raise GitError("未記録の変更があります。先に記録するか、破棄してください")
+    now = set(git(repo, "ls-tree", "-r", "--name-only", "HEAD", "--", path).splitlines())
+    then = set(git(repo, "ls-tree", "-r", "--name-only", rev, "--", path).splitlines())
+    for extra in sorted(now - then):
+        git(repo, "rm", "-q", "-f", "--", extra.strip('"'))
+    git(repo, "checkout", rev, "--", path)

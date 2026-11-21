@@ -5,6 +5,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from . import edit
+from .gui_style import place_dialog
 from .core import Article, Registry, load_dir
 from .render import article_text
 from .search import search, snippet
@@ -22,6 +23,7 @@ class RefPicker(tk.Toplevel):
         self.title("参照を挿入")
         self.geometry("820x460")
         self.transient(app)
+        place_dialog(self, app)
         top = ttk.Frame(self)
         top.pack(fill="x", padx=8, pady=8)
         ttk.Label(top, text="参照先の語（条名・本文の一部）:").pack(side="left")
@@ -55,7 +57,7 @@ class RefPicker(tk.Toplevel):
         self.hits = {}
         for title, did, label, art_title, text, level, nid in search(self.app.db, q, limit=200):
             head = label + (f"（{art_title}）" if level == "article" and art_title else "")
-            iid = self.tree.insert("", "end", values=(title, head, snippet(text or art_title, q, 40)))
+            iid = self.tree.insert("", "end", values=(title, head, snippet(text or art_title, q, 40, brackets=False)))
             self.hits[iid] = (did, nid, level)
 
     def pick(self):
@@ -80,6 +82,7 @@ class EditDialog(tk.Toplevel):
         self.title(("条を新設" if self.new else f"条を変更: {art.label}") + f"　{doc.title}")
         self.geometry("900x700")
         self.transient(app)
+        place_dialog(self, app)
         f = ttk.Frame(self)
         f.pack(fill="x", padx=10, pady=8)
         if self.new:
@@ -99,8 +102,8 @@ class EditDialog(tk.Toplevel):
         ttk.Label(f, text="見出し:").grid(row=3, column=0, sticky="w", pady=4)
         self.title_var = tk.StringVar(value=art.title if art else "")
         ttk.Entry(f, textvariable=self.title_var, width=50).grid(row=3, column=1, sticky="w", padx=6)
-        ttk.Label(self, text=HELP, foreground="#555", justify="left").pack(anchor="w", padx=10)
-        self.ed = tk.Text(self, wrap="char", font=("MS Gothic", 10), height=14, undo=True, padx=6, pady=4)
+        ttk.Label(self, text=HELP, style="Hint.TLabel", justify="left").pack(anchor="w", padx=10)
+        self.ed = app.styler.text_widget(self, "input", wrap="char", height=14, undo=True)
         self.ed.pack(fill="both", expand=True, padx=10, pady=4)
         self.ed.insert("1.0", edit.article_to_text(art) if art else "項 ")
         bt = ttk.Frame(self)
@@ -108,9 +111,9 @@ class EditDialog(tk.Toplevel):
         ttk.Button(bt, text="参照を挿入…", command=self.insert_ref).pack(side="left")
         ttk.Button(bt, text="出力のプレビュー", command=self.preview).pack(side="left", padx=6)
         ttk.Button(bt, text="キャンセル", command=self.destroy).pack(side="right")
-        ttk.Button(bt, text="保存", command=self.save).pack(side="right", padx=6)
+        ttk.Button(bt, text="保存", command=self.save, style="Accent.TButton").pack(side="right", padx=6)
         ttk.Label(self, text="プレビュー（番号・参照を展開した出力）:").pack(anchor="w", padx=10, pady=(8, 0))
-        self.pv = tk.Text(self, wrap="word", font=("Yu Mincho", 10), height=9, state="disabled", padx=6)
+        self.pv = app.styler.text_widget(self, "text", wrap="char", height=9, state="disabled")
         self.pv.pack(fill="x", padx=10, pady=(0, 10))
 
     def insert_ref(self):

@@ -104,11 +104,15 @@ def ensure_db(a):
 def cmd_search(a):
     from .search import search, snippet
     ensure_db(a)
-    rows = search(a.db, " ".join(a.query), doc=a.doc, kind=a.kind, level=a.level, limit=a.limit)
+    try:
+        rows = search(a.db, " ".join(a.query), doc=a.doc, kind=a.kind, level=a.level, limit=a.limit, regex=a.regex)
+    except ValueError as e:
+        print(f"エラー: {e}")
+        return 2
     for title, doc, label, art_title, text, level, nid in rows:
         head = f"{title} {label}" + (f"（{art_title}）" if art_title and level == "article" else "")
         print(head)
-        print("    " + snippet(text or art_title, " ".join(a.query)))
+        print("    " + snippet(text or art_title, " ".join(a.query), regex=a.regex))
     print(f"{len(rows)}件" + ("（上限）" if len(rows) >= a.limit else ""))
     return 0
 
@@ -170,6 +174,7 @@ def main(argv=None):
             p.add_argument("--kind", help="規約 / 使用細則 / 細則 / 別表 / 別紙 / 別図")
             p.add_argument("--level", choices=["article", "para", "item", "appendix"])
             p.add_argument("--limit", type=int, default=30)
+            p.add_argument("-E", "--regex", action="store_true", help="検索語を正規表現として使う（空白で区切らず、全体で1つの式）")
         if name == "refs":
             p.add_argument("ident", help="条・項・号のID（例 art-023、kiyaku#art-023）")
     a = ap.parse_args(argv)

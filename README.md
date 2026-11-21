@@ -1,6 +1,6 @@
 # 規約ノート（KiyakuNote）
 
-**マンション管理規約 編集・改正履歴管理システム** — バージョン 1.0
+**マンション管理規約 編集・改正履歴管理システム** — バージョン 1.1
 
 マンション管理規約（細則・使用細則を含む）を **Markdown + git** で管理し、条文の追加・削除・変更、
 **新旧対照表の自動生成**、**参照条項の自動更新**、検索、Word 出力ができる、Windows 向けのオープンソースのツールです。
@@ -15,14 +15,15 @@
   変更箇所を取消線・太字で示した表を作ります（Markdown / Word）。
 - **版（改正）の管理。** 総会決議日・施行日の単位で版を持ち、「ある日に有効だった条文」を取り出せます（git のタグを使います）。
 - **整合性チェック。** 参照切れ、ID の重複、削除済みの条への参照、番号の直書きを検出します。
-- **検索。** 条・項・号・別表の全文検索（SQLite FTS5）。版を指定して過去の規約も検索できます。
+- **検索。** 条・項・号・別表の全文検索（SQLite FTS5）。一致した語は黄色のマーカーで示し、**正規表現**でも検索できます。版を指定して過去の規約も検索できます。
 - **Word（.docx）出力。** 規約・細則・別表・別紙を Word にします。
 - **GUI。** コマンドを打たずに、Windows の画面で閲覧・検索・編集・対照表・版の登録ができます。
+  変更履歴の確認・戻す・破棄・git の利用者名の設定も画面でできます。文字の種類と大きさ（画面・Word 出力）は「表示設定」で変えられます。
 - 枝番（第5条の2、項の「４の２」、号の「（３）の２」）、削除条（番号の枠を残す）、附則の「１．」形式の項に対応。
 
 ## ダウンロード
 
-[Releases](https://github.com/prismpepe/KiyakuNote/releases) の `KiyakuNote-1.0-win.zip`（Windows 用の exe 版。Python は不要）を展開して、
+[Releases](https://github.com/prismpepe/KiyakuNote/releases) の `KiyakuNote-1.1-win.zip`（Windows 用の exe 版。Python は不要）を展開して、
 `KiyakuNote\KiyakuNote.exe` を起動します。署名のない exe なので、初回は Windows の警告（SmartScreen）が出ることがあります
 （「詳細情報」→「実行」）。ソースから動かすときは下の「クイックスタート」です。
 過去の版（git のタグ）を使う機能は、リポジトリをクローンしたときに使えます（exe 版の zip には git の履歴が入っていません）。
@@ -82,7 +83,7 @@ python -m kiyakunote gui                                 # 画面を開く（run
 ```bash
 python -m pytest -q          # テスト
 python build_exe.py          # 手元で使う exe を作る（PyInstaller が必要）
-python build_release.py      # 配布版 dist/KiyakuNote-1.0-win.zip を作る（build_release.bat でも可）
+python build_release.py      # 配布版 dist/KiyakuNote-1.1-win.zip を作る（build_release.bat でも可）
 python tools/take_screenshots.py   # docs/images/ のスクリーンショットを作り直す（Pillow が必要）
 ```
 

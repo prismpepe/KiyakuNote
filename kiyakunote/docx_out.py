@@ -21,6 +21,14 @@ from .render import expand_text, first_referrer, item_numbers, marker, para_disp
 
 FONT = "MS 明朝"
 SIZE = 10.5
+DEFAULT_FONT, DEFAULT_SIZE = FONT, SIZE
+
+
+def configure(family="", size=0):
+    """Word出力の本文のフォントと大きさを変える（空・0 なら従来どおり）。見出しなどの相対的な大きさ・表の幅は変えない。"""
+    global FONT, SIZE
+    FONT = (family or "").strip() or DEFAULT_FONT
+    SIZE = float(size) if size else DEFAULT_SIZE
 
 
 def new_document(landscape=False, header=""):

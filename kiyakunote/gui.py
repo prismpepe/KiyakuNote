@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -15,13 +16,12 @@ from .compare import KINDS, appendix_changes, bare_reference_notes, compare_doc,
 from .core import APPENDIX_KINDS, Heading
 from .lint import lint
 from .render import article_text, render_doc
-from .search import build_index, doc_order, plain, refs_of, search, snippet
+from .search import build_index, doc_order, excerpt, find_spans, norm, plain, refs_of, search
 from . import APP_DESCRIPTION, APP_NAME, __version__
 from .versions import ROOT, load_revisions, load_version
-from . import gitops
+from . import gitops, settings
+from .gui_style import Styler
 
-FONT = ("Yu Gothic UI", 10)
-MONO = ("MS Gothic", 10)
 WORK = "作業中の src/（未確定の編集を含む）"
 
 LINT_HELP = {
@@ -40,9 +40,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME} {__version__}")
-        self.geometry("1180x760")
-        self.option_add("*Font", FONT)
-        ttk.Style(self).configure("Treeview", rowheight=22, font=FONT)
+        self.geometry("1280x820")
+        self.minsize(960, 620)
+        self.cfg = settings.load()
+        self.styler = Styler(self, self.cfg)                     # フォント・タブ・ボタンの見た目（設定で変えられる）
+        self.configure(background="#f3f5f8")
         self.revs = load_revisions()
         self.versions = {WORK: "WORKTREE"}
         for r in self.revs:
@@ -56,22 +58,27 @@ class App(tk.Tk):
         self.cmp_rows = []
         self.cmp_notes = []
         self.cmp_labels = ("", "")
+        self.hl = None
+        self.hl_iid = None
         self.status = tk.StringVar(value="")
         self._top()
         self.nb = ttk.Notebook(self)
-        self.nb.pack(fill="both", expand=True, padx=6, pady=(0, 2))
+        self.nb.pack(fill="both", expand=True, padx=8, pady=(0, 4))
         self.tab_read = self._tab_read()
         self.tab_search = self._tab_search()
         self.tab_lint = self._tab_lint()
         self.tab_cmp = self._tab_cmp()
         self.tab_out = self._tab_out()
         self.tab_rev = self._tab_rev()
+        self.tab_hist = self._tab_hist()
         for t, name in ((self.tab_read, "条文"), (self.tab_search, "検索"), (self.tab_lint, "整合性チェック"),
-                        (self.tab_cmp, "新旧対照表"), (self.tab_out, "Word出力"), (self.tab_rev, "版の一覧")):
+                        (self.tab_cmp, "新旧対照表"), (self.tab_out, "Word出力"), (self.tab_rev, "版の一覧"),
+                        (self.tab_hist, "変更履歴")):
             self.nb.add(t, text=f"  {name}  ")
-        ttk.Label(self, textvariable=self.status, anchor="w", relief="sunken").pack(fill="x", side="bottom")
+        ttk.Label(self, textvariable=self.status, anchor="w", style="Status.TLabel").pack(fill="x", side="bottom")
         self.fill_revs()
         self.update_git_state()
+        self.fill_hist()
         self.load_version()
 
     # ---- 共通 ----
@@ -88,13 +95,27 @@ class App(tk.Tk):
         f = ttk.Frame(self)
         f.pack(fill="x", padx=6, pady=6)
         ttk.Label(f, text="表示する版:").pack(side="left")
-        self.ver = ttk.Combobox(f, values=list(self.versions), state="readonly", width=44)
+        self.ver = ttk.Combobox(f, values=list(self.versions), state="readonly", width=42)
         self.ver.set(WORK)
         self.ver.pack(side="left", padx=4)
         self.ver.bind("<<ComboboxSelected>>", lambda e: self.load_version())
         ttk.Button(f, text="読み直す", command=self.load_version).pack(side="left", padx=4)
         ttk.Button(f, text="バージョン情報", command=self.about).pack(side="right", padx=2)
-        ttk.Label(f, text=f"{APP_NAME}（KiyakuNote）  バージョン {__version__}", foreground="#555").pack(side="right", padx=8)
+        ttk.Button(f, text="表示設定…", command=self.open_settings).pack(side="right", padx=2)
+        ttk.Label(f, text=f"{APP_NAME}（KiyakuNote）  バージョン {__version__}", style="Hint.TLabel").pack(side="right", padx=8)
+
+    def set_cfg(self, cfg, save=False):
+        """表示設定を画面に反映する。save=True なら保存もする。"""
+        self.cfg = settings.clean(cfg)
+        self.styler.apply(self.cfg)
+        self.show_docx_font()
+        if save:
+            settings.save(self.cfg)
+            self.done("表示設定を保存しました")
+
+    def open_settings(self):
+        from .gui_settings import SettingsDialog
+        SettingsDialog(self)
 
     def about(self):
         lines = [f"{APP_NAME}（KiyakuNote）", f"バージョン {__version__}", "", APP_DESCRIPTION, "",
@@ -126,11 +147,11 @@ class App(tk.Tk):
         f = ttk.Frame(self.nb)
         bar = ttk.Frame(f)
         bar.pack(fill="x", pady=(6, 4))
-        ttk.Button(bar, text="この条を変更…", command=self.edit_selected).pack(side="left", padx=2)
+        ttk.Button(bar, text="この条を変更…", command=self.edit_selected, style="Accent.TButton").pack(side="left", padx=2)
         ttk.Button(bar, text="条を新設…", command=self.new_article).pack(side="left", padx=2)
         ttk.Button(bar, text="この条を削除…", command=self.delete_selected).pack(side="left", padx=2)
         ttk.Button(bar, text="直前の保存を元に戻す", command=self.undo_last).pack(side="left", padx=14)
-        ttk.Label(bar, text="（編集は「作業中の src/」を表示しているときだけできます）", foreground="#555").pack(side="left")
+        ttk.Label(bar, text="（編集は「作業中の src/」を表示しているときだけできます）", style="Hint.TLabel").pack(side="left")
         pw = ttk.PanedWindow(f, orient="horizontal")
         pw.pack(fill="both", expand=True)
         left = ttk.Frame(pw)
@@ -141,12 +162,15 @@ class App(tk.Tk):
         sb.pack(side="left", fill="y")
         self.tree.bind("<<TreeviewSelect>>", self.on_tree)
         right = ttk.Frame(pw)
-        self.body = tk.Text(right, wrap="word", font=("Yu Mincho", 11), height=18, padx=8, pady=6)
+        self.body = self.styler.text_widget(right, "text", wrap="char", height=8, spacing1=3, spacing3=3)
         sb2 = ttk.Scrollbar(right, command=self.body.yview)
         self.body.configure(yscrollcommand=sb2.set, state="disabled")
         self.body.pack(side="top", fill="both", expand=True)
         ttk.Label(right, text="この条が参照している先／この条を参照している元").pack(anchor="w", pady=(6, 0))
-        self.refs_box = tk.Text(right, wrap="word", height=8, state="disabled", padx=8)
+        self.refs_box = self.styler.text_widget(right, "input", wrap="char", height=4, state="disabled")
+        self.body.tag_configure("hit", background="#ffe14d", foreground="#000000")
+        for lv, sp in (("h1", 12), ("h2", 10), ("h3", 8)):        # 文書名・章・条の見出し
+            self.body.tag_configure(lv, font=self.styler.f_text_bold, foreground="#1f4e79", spacing1=sp, spacing3=2)
         self.refs_box.pack(side="top", fill="x")
         pw.add(left, weight=1)
         pw.add(right, weight=3)
@@ -181,6 +205,50 @@ class App(tk.Tk):
         widget.insert("1.0", text)
         widget.config(state="disabled")
 
+    def set_body(self, text):
+        """条文の表示欄に出す。Markdownの見出し記号（# ###）は外して見出しの書式にし、段落の間の余分な空行は詰める。"""
+        w = self.body
+        w.config(state="normal")
+        w.delete("1.0", "end")
+        for ln in (x for x in text.split("\n") if x.strip()):             # 空行・空白だけの行は出さない
+            m = re.match(r"^(#{1,6})[ ]*(.*)$", ln)
+            if m:
+                w.insert("end", m.group(2) + "\n", (f"h{min(len(m.group(1)), 3)}",))
+            else:
+                w.insert("end", ln + "\n")
+        w.delete("end-2c", "end-1c")                 # 末尾の余分な改行
+        w.config(state="disabled")
+
+    def highlight_body(self):
+        """検索から開いたときは、条文の中の検索語を黄色のマーカーで示す。"""
+        w = self.body
+        w.tag_remove("hit", "1.0", "end")
+        sel = self.tree.selection()
+        hl = self.hl if sel and sel[0] == self.hl_iid else None        # 検索から開いた条を表示している間だけ
+        if not hl or not hl[0]:
+            return
+        raw = w.get("1.0", "end-1c")
+        chars, idx = [], []                          # 表示の文字を、検索と同じ全角・半角をそろえた形にして、位置を対応づける
+        for i, c in enumerate(raw):
+            for ch in unicodedata.normalize("NFKC", c):
+                chars.append(ch)
+                idx.append(i)
+        text = "".join(chars)
+        try:
+            if hl[1]:
+                spans = find_spans(text, hl[0], True)
+            else:
+                spans = []
+                for term in [x for x in norm(hl[0]).split(" ") if x]:
+                    spans += [(m.start(), m.end()) for m in re.finditer(re.escape(term), text)]
+        except ValueError:
+            return
+        spans = [(idx[a], idx[b - 1] + 1) for a, b in sorted(spans) if b > a]
+        for a, b in spans:
+            w.tag_add("hit", f"1.0+{a}c", f"1.0+{b}c")
+        if spans:
+            w.see(f"1.0+{spans[0][0]}c")
+
     def on_tree(self, _=None):
         sel = self.tree.selection()
         if not sel:
@@ -193,7 +261,7 @@ class App(tk.Tk):
             if d.kind in APPENDIX_KINDS:
                 self.show_appendix(d)
             else:
-                self.set_text(self.body, render_doc(self.reg, d))
+                self.set_body(render_doc(self.reg, d))
                 self.set_text(self.refs_box, "")
             return
         did, aid = iid.split("|", 1)
@@ -201,27 +269,39 @@ class App(tk.Tk):
         art = next((a for a in d.articles if a.id == aid), None)
         if art is None:
             return
-        self.set_text(self.body, article_text(self.reg, d, art))
+        self.set_body(article_text(self.reg, d, art))
+        self.highlight_body()
         out, inc = refs_of(self.db, f"{did}#{aid}")
         lines = ["【参照している先】"] + [f"  {a} → {c}" for a, _, c in out] if out else ["【参照している先】  なし"]
         lines += ["【参照している元】"] + [f"  {self.reg.docs[x].title} {y} → {z}" for x, y, z in inc] if inc else ["【参照している元】  なし"]
         self.set_text(self.refs_box, "\n".join(lines))
 
     def show_appendix(self, d):
+        """別表・別紙。HTMLの表は、罫線つきの表として出す（Markdownやタグのソースは見せない）。"""
+        from .gui_table import parse_md_table, parse_table, plain_text, split_body, table_frame
         n = self.reg.appendix_no(d)
         label = "別図" if d.kind == "別図" else (f"別表第{n}" if d.kind == "別表" else f"{d.kind}{n}")
+        w = self.body
+        w.config(state="normal")
+        w.delete("1.0", "end")
+        w.insert("end", f"{label}　{d.title}\n", ("h2",))
         if d.meta.get("deleted") == "true":
-            text = f"{label}（削除）"
-        elif "<tr" in d.raw_body:
-            rows = []
-            for tr in re.findall(r"<tr>(.*?)</tr>", d.raw_body, re.S):
-                cells = [plain(c).strip() for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S)]
-                rows.append(" | ".join(cells))
-            text = f"{label}　{d.title}\n\n" + "\n".join(rows)
+            w.insert("end", "（削除）\n")
+        elif "<tr" in d.raw_body or re.search(r"(?m)^\s*\|.*\|\s*$", d.raw_body):
+            wheel = lambda e: w.yview_scroll(-1 if e.delta > 0 else 1, "units")             # noqa: E731
+            for kind, chunk in split_body(d.raw_body):
+                if kind in ("table", "mdtable"):
+                    cells = parse_table(chunk) if kind == "table" else parse_md_table(chunk)
+                    fr = table_frame(w, cells, self.styler.f_ui, self.styler.f_ui_bold, wheel)
+                    w.window_create("end", window=fr, padx=2, pady=6)
+                    w.insert("end", "\n")
+                else:
+                    s = plain_text(chunk)
+                    if s.strip():
+                        w.insert("end", s + "\n")
         else:
-            text = f"{label}　{d.title}\n\n" + (
-                "（画像のページです。Word出力でPDFのページ画像が付きます）" if "![" in d.raw_body else d.raw_body)
-        self.set_text(self.body, text)
+            w.insert("end", "（画像のページです。Word出力でPDFのページ画像が付きます）\n" if "![" in d.raw_body else d.raw_body + "\n")
+        w.config(state="disabled")
         self.set_text(self.refs_box, "")
 
     # ---- 編集 ----
@@ -316,6 +396,7 @@ class App(tk.Tk):
             iid = did
         self.nb.select(self.tab_read)
         self.tree.selection_set(iid)
+        self.hl_iid = iid if self.hl else None
         self.tree.see(iid)
         self.on_tree()
 
@@ -325,56 +406,98 @@ class App(tk.Tk):
         top = ttk.Frame(f)
         top.pack(fill="x", pady=6)
         ttk.Label(top, text="検索語（空白でAND）:").pack(side="left")
-        self.s_q = ttk.Entry(top, width=34)
+        self.s_q = ttk.Entry(top, width=30)
         self.s_q.pack(side="left", padx=4)
         self.s_q.bind("<Return>", lambda e: self.do_search())
+        self.s_re = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="正規表現", variable=self.s_re).pack(side="left", padx=(6, 0))
         ttk.Label(top, text="文書:").pack(side="left", padx=(10, 0))
         self.s_doc = ttk.Combobox(top, state="readonly", width=26)
         self.s_doc.pack(side="left", padx=4)
-        ttk.Button(top, text="検索", command=self.do_search).pack(side="left", padx=6)
-        self.s_info = ttk.Label(top, text="")
-        self.s_info.pack(side="left", padx=8)
-        cols = ("doc", "label", "text")
-        self.s_tree = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse")
-        for c, t, w in (("doc", "文書", 220), ("label", "条・項・号", 170), ("text", "抜粋", 700)):
-            self.s_tree.heading(c, text=t)
-            self.s_tree.column(c, width=w, anchor="w")
-        sb = ttk.Scrollbar(f, command=self.s_tree.yview)
-        self.s_tree.configure(yscrollcommand=sb.set)
-        self.s_tree.pack(side="left", fill="both", expand=True)
+        ttk.Button(top, text="検索", command=self.do_search, style="Accent.TButton").pack(side="left", padx=6)
+        self.s_info = ttk.Label(f, text="", style="Hint.TLabel")
+        self.s_info.pack(anchor="w", pady=(0, 4))
+        # 結果は、一致した語を黄色のマーカーで示すため、Text に並べる（1件=見出し行＋抜粋行）
+        box = ttk.Frame(f)
+        box.pack(fill="both", expand=True)
+        self.s_list = self.styler.text_widget(box, "text", wrap="char", state="disabled", cursor="arrow")
+        sb = ttk.Scrollbar(box, command=self.s_list.yview)
+        self.s_list.configure(yscrollcommand=sb.set)
+        self.s_list.pack(side="left", fill="both", expand=True)
         sb.pack(side="left", fill="y")
-        self.s_tree.bind("<Double-1>", self.on_search_open)
-        self.s_hits = {}
+        self.s_list.tag_configure("head", font=self.styler.f_ui_bold, foreground="#1f4e79", spacing1=8)
+        self.s_list.tag_configure("hit", background="#ffe14d", foreground="#000000")        # 一致した語（黄色のマーカー）
+        self.s_list.tag_configure("sel", background="#cfe3f8")
+        self.s_list.tag_raise("hit")
+        self.s_list.bind("<Button-1>", self.on_search_click)
+        self.s_list.bind("<Double-1>", self.on_search_open)
+        self.s_hits = []                    # [(文書ID, ノードID)]
+        self.s_sel = None
+        self.s_last = ("", False)
         return f
 
     def do_search(self):
         q = self.s_q.get().strip()
         if not q:
             return
+        rx = self.s_re.get()
         doc = None
         if self.s_doc.get() != "（すべて）":
             doc = next((d.id for d in self.reg.docs.values() if d.title == self.s_doc.get()), None)
-        rows = search(self.db, q, doc=doc, limit=300)
-        self.s_tree.delete(*self.s_tree.get_children())
-        self.s_hits = {}
+        try:
+            rows = search(self.db, q, doc=doc, limit=300, regex=rx)
+        except ValueError as e:
+            self.s_info.config(text=str(e))
+            return
+        w = self.s_list
+        w.config(state="normal")
+        w.delete("1.0", "end")
+        self.s_hits, self.s_sel, self.s_last = [], None, (q, rx)
         for i, (title, did, label, art_title, text, level, nid) in enumerate(rows):
-            head = label + (f"（{art_title}）" if level == "article" and art_title else "")
-            iid = self.s_tree.insert("", "end", values=(title, head, snippet(text or art_title, q, 50)))
-            self.s_hits[iid] = (did, nid)
-        self.s_info.config(text=f"{len(rows)}件" + ("（上限300）" if len(rows) >= 300 else "") + "　ダブルクリックで条文を開く")
+            head = f"{title}　{label}" + (f"（{art_title}）" if level == "article" and art_title else "")
+            w.insert("end", head + "\n", ("head", f"r{i}"))
+            snip, spans = excerpt(text or art_title, q, 60, rx)
+            start = w.index("end-1c")
+            w.insert("end", snip + "\n", (f"r{i}",))
+            for a, b in spans:
+                w.tag_add("hit", f"{start}+{a}c", f"{start}+{b}c")
+            self.s_hits.append((did, nid))
+        w.config(state="disabled")
+        self.s_info.config(text=f"{len(rows)}件" + ("（上限300）" if len(rows) >= 300 else "")
+                           + "　一致した語は黄色で示します。クリックで選び、ダブルクリックで条文を開く")
 
-    def on_search_open(self, _=None):
-        sel = self.s_tree.selection()
-        if sel:
-            self.goto(*self.s_hits[sel[0]])
+    def _hit_at(self, event):
+        idx = self.s_list.index(f"@{event.x},{event.y}")
+        for tag in self.s_list.tag_names(idx):
+            if tag.startswith("r") and tag[1:].isdigit():
+                return int(tag[1:])
+        return None
+
+    def on_search_click(self, event):
+        i = self._hit_at(event)
+        self.s_list.tag_remove("sel", "1.0", "end")
+        self.s_sel = i
+        if i is not None:
+            rng = self.s_list.tag_ranges(f"r{i}")
+            if rng:
+                self.s_list.tag_add("sel", rng[0], rng[-1])
+                self.s_list.tag_raise("hit")
+        return "break"
+
+    def on_search_open(self, event=None):
+        i = self._hit_at(event) if event is not None else self.s_sel
+        if i is not None and 0 <= i < len(self.s_hits):
+            self.hl = self.s_last                       # 開いた条文でも、検索語を黄色で示す
+            self.goto(*self.s_hits[i])
+        return "break"
 
     # ---- 整合性チェック ----
     def _tab_lint(self):
         f = ttk.Frame(self.nb)
         top = ttk.Frame(f)
         top.pack(fill="x", pady=6)
-        ttk.Button(top, text="チェックを実行", command=self.do_lint).pack(side="left")
-        self.l_info = ttk.Label(top, text="")
+        ttk.Button(top, text="チェックを実行", command=self.do_lint, style="Accent.TButton").pack(side="left")
+        self.l_info = ttk.Label(top, text="", style="Hint.TLabel")
         self.l_info.pack(side="left", padx=10)
         cols = ("sev", "code", "doc", "line", "msg")
         self.l_tree = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse")
@@ -385,9 +508,9 @@ class App(tk.Tk):
         sb = ttk.Scrollbar(f, command=self.l_tree.yview)
         self.l_tree.configure(yscrollcommand=sb.set)
         self.l_tree.pack(side="top", fill="both", expand=True)
-        self.l_tree.tag_configure("E", foreground="#b00020")
-        self.l_tree.tag_configure("W", foreground="#8a5a00")
-        ttk.Label(f, text="E=エラー（直さないと出力できない）／W=警告（原文はそのままで、確認が必要）", foreground="#555").pack(anchor="w", pady=4)
+        self.l_tree.tag_configure("E", foreground="#a00018")
+        self.l_tree.tag_configure("W", foreground="#7a4a00")
+        ttk.Label(f, text="E=エラー（直さないと出力できない）／W=警告（原文はそのままで、確認が必要）", style="Hint.TLabel").pack(anchor="w", pady=4)
         return f
 
     def do_lint(self):
@@ -416,22 +539,27 @@ class App(tk.Tk):
         self.c_new = ttk.Combobox(top, values=vals, state="readonly", width=34)
         self.c_new.set(vals[0])
         self.c_new.pack(side="left", padx=4)
-        ttk.Button(top, text="対照表を作る", command=self.do_compare).pack(side="left", padx=8)
+        ttk.Button(top, text="対照表を作る", command=self.do_compare, style="Accent.TButton").pack(side="left", padx=8)
         top2 = ttk.Frame(f)
         top2.pack(fill="x")
-        self.c_info = ttk.Label(top2, text="（作業中の src/ を編集したあと、「改正後」を作業中にして作ります）", foreground="#555")
+        self.c_info = ttk.Label(top2, text="（作業中の src/ を編集したあと、「改正後」を作業中にして作ります）", style="Hint.TLabel")
         self.c_info.pack(side="left")
         ttk.Button(top2, text="Wordで保存", command=lambda: self.save_cmp("docx")).pack(side="right", padx=2)
         ttk.Button(top2, text="Markdownで保存", command=lambda: self.save_cmp("md")).pack(side="right", padx=2)
         pw = ttk.PanedWindow(f, orient="vertical")
         pw.pack(fill="both", expand=True, pady=4)
         cols = ("kind", "doc", "art")
-        self.c_tree = ttk.Treeview(pw, columns=cols, show="headings", selectmode="browse", height=9)
+        tree_box = ttk.Frame(pw)
+        self.c_tree = ttk.Treeview(tree_box, columns=cols, show="headings", selectmode="browse", height=14)
         for c, t, w in (("kind", "区分", 130), ("doc", "文書", 300), ("art", "条", 500)):
             self.c_tree.heading(c, text=t)
             self.c_tree.column(c, width=w, anchor="w")
+        c_sb = ttk.Scrollbar(tree_box, command=self.c_tree.yview)      # 行が多いとき、続きがあることが分かるようにする
+        self.c_tree.configure(yscrollcommand=c_sb.set)
+        self.c_tree.pack(side="left", fill="both", expand=True)
+        c_sb.pack(side="left", fill="y")
         self.c_tree.bind("<<TreeviewSelect>>", self.on_cmp_select)
-        pw.add(self.c_tree, weight=1)
+        pw.add(tree_box, weight=2)
         pair = ttk.Frame(pw)
         self.c_o = self._mk_text(pair, "改正前")
         self.c_n = self._mk_text(pair, "改正後")
@@ -441,13 +569,14 @@ class App(tk.Tk):
     def _mk_text(self, parent, title):
         fr = ttk.LabelFrame(parent, text=title)
         fr.pack(side="left", fill="both", expand=True, padx=2)
-        t = tk.Text(fr, wrap="word", font=("Yu Mincho", 10), state="disabled", padx=6, pady=4)
+        t = self.styler.text_widget(fr, "text", wrap="char", state="disabled", height=8, width=10)
         sb = ttk.Scrollbar(fr, command=t.yview)
         t.configure(yscrollcommand=sb.set)
         t.pack(side="left", fill="both", expand=True)
         sb.pack(side="left", fill="y")
-        t.tag_configure("del", foreground="#c00000", overstrike=True)
-        t.tag_configure("ins", foreground="#0032a0", underline=True, font=("Yu Mincho", 10, "bold"))
+        # 削除は赤の取消線＋薄い赤の地、追加は濃い青の太字の下線＋薄い青の地（色だけに頼らず形でも区別できる）
+        t.tag_configure("del", foreground="#a00018", background="#ffe1e1", overstrike=True)
+        t.tag_configure("ins", foreground="#00306e", background="#d9ecff", underline=True, font=self.styler.f_text_bold)
         return t
 
     def put_marked(self, widget, s):
@@ -491,9 +620,12 @@ class App(tk.Tk):
         for i, (kind, title, head, _, _) in enumerate(self.cmp_rows):
             self.c_tree.insert("", "end", iid=str(i), values=(kind, title, head))
         s = "、".join(f"{k} {v}件" for k, v in total.items() if v) or "変更なし"
+        ndoc = len({r[1] for r in self.cmp_rows})
+        if self.cmp_rows:
+            s += f"（{ndoc}文書。一覧は下にスクロールできます）"
         extra = f"　別表・別紙 {len(self.cmp_ap)}件" if self.cmp_ap else ""
         warn = f"　／　要確認の直書き参照 {len(self.cmp_notes)}件（保存した対照表の末尾に載ります）" if self.cmp_notes else ""
-        self.c_info.config(text=s + extra + warn, foreground="#000")
+        self.c_info.config(text=s + extra + warn, foreground="#111")
         self.put_marked(self.c_o, "")
         self.put_marked(self.c_n, "")
         self.done("対照表を作りました")
@@ -518,6 +650,7 @@ class App(tk.Tk):
         lo, ln = self.cmp_labels
         if fmt == "docx":
             from .docx_out import build_compare_docx
+            self.apply_docx_font()
             build_compare_docx(ro, rn, lo, ln, path, notes=self.cmp_notes)
         else:
             Path(path).write_text(render_table(ro, rn, lo, ln) + "\n" + render_bare_notes(self.cmp_notes),
@@ -535,11 +668,24 @@ class App(tk.Tk):
         ttk.Label(row, text="出力する文書:").pack(side="left")
         self.out_doc = ttk.Combobox(row, state="readonly", width=40)
         self.out_doc.pack(side="left", padx=6)
-        ttk.Button(row, text="Wordで出力…", command=self.do_docx).pack(side="left", padx=10)
+        ttk.Button(row, text="Wordで出力…", command=self.do_docx, style="Accent.TButton").pack(side="left", padx=10)
         ttk.Label(box, text="番号は計算済み、参照は展開済み。別表・別紙（画像を含む）は規約の末尾に付きます。\n"
                             "整合性チェックでエラーがあると出力できません。",
-                  foreground="#555").pack(anchor="w", padx=10, pady=(0, 10))
+                  style="Hint.TLabel").pack(anchor="w", padx=10, pady=(0, 6))
+        self.docx_info = ttk.Label(box, text="", style="Hint.TLabel")
+        self.docx_info.pack(anchor="w", padx=10, pady=(0, 10))
+        self.show_docx_font()
         return f
+
+    def show_docx_font(self):
+        c = self.cfg
+        custom = c["docx_family"] or c["docx_size"]
+        self.docx_info.config(text="Wordの書式: " + (f"{c['docx_family'] or 'MS 明朝'} {c['docx_size'] or 10.5}pt" if custom
+                                                  else "従来どおり（MS 明朝 10.5pt）") + "　（右上の「表示設定…」で変えられます）")
+
+    def apply_docx_font(self):
+        from . import docx_out
+        docx_out.configure(self.cfg["docx_family"], self.cfg["docx_size"])
 
     def do_docx(self):
         errors = [f for f in lint(self.reg) if f[0] == "E"]
@@ -553,6 +699,7 @@ class App(tk.Tk):
         if not folder:
             return
         from .docx_out import build_docx
+        self.apply_docx_font()
         src_dir = ROOT / "src"
         if self.versions[self.ver.get()] != "WORKTREE":
             src_dir = self.tmp / "assets-src"
@@ -576,9 +723,9 @@ class App(tk.Tk):
         f = ttk.Frame(self.nb)
         bar = ttk.Frame(f)
         bar.pack(fill="x", pady=(6, 0))
-        ttk.Button(bar, text="変更を記録…", command=self.record_changes).pack(side="left", padx=2)
+        ttk.Button(bar, text="変更を記録…", command=self.record_changes, style="Accent.TButton").pack(side="left", padx=2)
         ttk.Button(bar, text="新しい版として登録…", command=self.register_version).pack(side="left", padx=2)
-        self.git_state = ttk.Label(bar, text="", foreground="#555")
+        self.git_state = ttk.Label(bar, text="", style="Hint.TLabel")
         self.git_state.pack(side="left", padx=12)
         cols = ("res", "eff", "ref", "n")
         self.r_tree = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse", height=12)
@@ -587,10 +734,10 @@ class App(tk.Tk):
             self.r_tree.column(c, width=w, anchor="w")
         self.r_tree.pack(fill="x", pady=6)
         self.r_tree.bind("<<TreeviewSelect>>", self.on_rev)
-        self.r_text = tk.Text(f, wrap="word", state="disabled", height=14, padx=8)
+        self.r_text = self.styler.text_widget(f, "input", wrap="char", state="disabled", height=14)
         self.r_text.pack(fill="both", expand=True)
         ttk.Label(f, text="条文を持つ版は、「表示する版」や新旧対照表で選べます。記録のみの版は、その時点の規約を取り込むと選べるようになります。",
-                  foreground="#555").pack(anchor="w", pady=4)
+                  style="Hint.TLabel").pack(anchor="w", pady=4)
         return f
 
     def fill_revs(self):
@@ -649,6 +796,7 @@ class App(tk.Tk):
             cb["values"] = vals
         self.fill_revs()
         self.update_git_state()
+        self.fill_hist()
         self.done(msg)
 
     def on_rev(self, _=None):
@@ -657,6 +805,137 @@ class App(tk.Tk):
             r = self.revs[int(sel[0])]
             text = "\n".join(r["notes"] + ["・" + c for c in r["changes"]])
             self.set_text(self.r_text, text)
+
+    # ---- 変更履歴（git のコマンドを使わずに、履歴の確認・戻す・破棄・利用者名の設定ができる） ----
+    def _tab_hist(self):
+        f = ttk.Frame(self.nb)
+        bar = ttk.Frame(f)
+        bar.pack(fill="x", pady=(6, 2))
+        ttk.Button(bar, text="いまの変更を見る", command=self.hist_show_now, style="Accent.TButton").pack(side="left", padx=2)
+        ttk.Button(bar, text="この記録の変更を見る", command=self.hist_show_selected).pack(side="left", padx=2)
+        ttk.Button(bar, text="この記録の状態に戻す…", command=self.hist_restore).pack(side="left", padx=2)
+        ttk.Button(bar, text="未記録の変更を破棄…", command=self.hist_discard).pack(side="left", padx=2)
+        ttk.Button(bar, text="利用者名の設定…", command=self.hist_user).pack(side="right", padx=2)
+        ttk.Button(bar, text="更新", command=self.fill_hist).pack(side="right", padx=2)
+        self.h_info = ttk.Label(f, text="", style="Hint.TLabel")
+        self.h_info.pack(anchor="w", pady=2)
+        pw = ttk.PanedWindow(f, orient="vertical")
+        pw.pack(fill="both", expand=True, pady=4)
+        box = ttk.Frame(pw)
+        cols = ("date", "id", "msg", "tag")
+        self.h_tree = ttk.Treeview(box, columns=cols, show="headings", selectmode="browse", height=10)
+        for c, t_, w in (("date", "日時", 150), ("id", "記録ID", 90), ("msg", "説明", 600), ("tag", "版（タグ）", 200)):
+            self.h_tree.heading(c, text=t_)
+            self.h_tree.column(c, width=w, anchor="w")
+        sb = ttk.Scrollbar(box, command=self.h_tree.yview)
+        self.h_tree.configure(yscrollcommand=sb.set)
+        self.h_tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y")
+        self.h_tree.bind("<<TreeviewSelect>>", lambda e: self.hist_show_selected())
+        pw.add(box, weight=1)
+        fr = ttk.Frame(pw)
+        self.h_text = self.styler.text_widget(fr, "input", wrap="none", state="disabled", height=12)
+        hs = ttk.Scrollbar(fr, command=self.h_text.yview)
+        self.h_text.configure(yscrollcommand=hs.set)
+        self.h_text.pack(side="left", fill="both", expand=True)
+        hs.pack(side="left", fill="y")
+        self.h_text.tag_configure("add", foreground="#004d1a", background="#dcf5e0")
+        self.h_text.tag_configure("del", foreground="#a00018", background="#ffe1e1")
+        self.h_text.tag_configure("hunk", foreground="#00306e", background="#d9ecff")
+        pw.add(fr, weight=2)
+        self.h_rows = []
+        return f
+
+    def fill_hist(self):
+        self.h_tree.delete(*self.h_tree.get_children())
+        self.h_rows = []
+        try:
+            if not gitops.is_repo(self.repo):
+                raise gitops.GitError("このフォルダは git の管理下にありません")
+            self.h_rows = gitops.log(self.repo)
+            n = len(gitops.changed_files(self.repo))
+        except gitops.GitError as e:
+            self.h_info.config(text=f"履歴を読めません: {e}")
+            return
+        for i, r in enumerate(self.h_rows):
+            self.h_tree.insert("", "end", iid=str(i), values=(r["date"], r["id"], r["message"], "、".join(r["tags"])))
+        self.h_info.config(text=f"記録 {len(self.h_rows)} 件（新しい順）。未記録の変更: {n} 件。"
+                                "記録を選ぶと、その記録で変わった内容が下に出ます（緑=追加、赤=削除）。")
+
+    def put_diff(self, text):
+        w = self.h_text
+        w.config(state="normal")
+        w.delete("1.0", "end")
+        for ln in text.splitlines():
+            tag = "add" if ln.startswith("+") and not ln.startswith("+++") else "del" if ln.startswith("-") and not ln.startswith("---") \
+                else "hunk" if ln.startswith("@@") else None
+            w.insert("end", ln + "\n", tag)
+        w.config(state="disabled")
+
+    def hist_show_now(self):
+        self.h_tree.selection_remove(*self.h_tree.selection())
+        try:
+            text = gitops.diff_text(self.repo)
+        except gitops.GitError as e:
+            messagebox.showerror("見られません", str(e))
+            return
+        self.put_diff(text or "未記録の変更はありません。")
+
+    def hist_show_selected(self):
+        sel = self.h_tree.selection()
+        if not sel:
+            return
+        try:
+            self.put_diff(gitops.diff_text(self.repo, self.h_rows[int(sel[0])]["id"]))
+        except gitops.GitError as e:
+            messagebox.showerror("見られません", str(e))
+
+    def hist_restore(self):
+        sel = self.h_tree.selection()
+        if not sel:
+            messagebox.showinfo("記録を選んでください", "上の一覧で、戻したい時点の記録を選んでください。")
+            return
+        r = self.h_rows[int(sel[0])]
+        if not messagebox.askyesno("この記録の状態に戻す",
+                                   f"条文（src/）を、{r['date']} の記録「{r['message']}」の状態にします。\n\n"
+                                   "戻した内容は『未記録の変更』になります（記録の履歴は消えません）。\n"
+                                   "よければ、そのあと「変更を記録」で記録してください。続けますか？"):
+            return
+        try:
+            gitops.restore_to(self.repo, r["id"])
+        except gitops.GitError as e:
+            messagebox.showerror("戻せません", str(e))
+            return
+        self.refresh_after_git(f"{r['date']} の状態に戻しました。必要なら「変更を記録」してください")
+        self.fill_hist()
+        self.load_version()
+
+    def hist_discard(self):
+        try:
+            files = gitops.changed_files(self.repo)
+        except gitops.GitError as e:
+            messagebox.showerror("できません", str(e))
+            return
+        if not files:
+            messagebox.showinfo("未記録の変更を破棄", "未記録の変更はありません。")
+            return
+        names = "\n".join(f"  {st} {p}" for st, p in files[:12]) + ("\n  …" if len(files) > 12 else "")
+        if not messagebox.askyesno("未記録の変更を破棄",
+                                   f"未記録の変更 {len(files)} 件を捨てて、最後に記録した状態に戻します。\n\n{names}\n\n"
+                                   "**この操作は元に戻せません。** 続けますか？", icon="warning"):
+            return
+        try:
+            gitops.discard_changes(self.repo)
+        except gitops.GitError as e:
+            messagebox.showerror("できません", str(e))
+            return
+        self.refresh_after_git("未記録の変更を破棄しました")
+        self.fill_hist()
+        self.load_version()
+
+    def hist_user(self):
+        from .gui_git import UserDialog
+        UserDialog(self)
 
     @staticmethod
     def open_path(path):

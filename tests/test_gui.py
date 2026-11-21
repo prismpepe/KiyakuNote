@@ -18,7 +18,13 @@ class GuiSmoke(unittest.TestCase):
         try:
             app.s_q.insert(0, "駐車場 使用料")
             app.do_search()
-            self.assertTrue(app.s_tree.get_children())
+            self.assertTrue(app.s_hits)                                   # 結果が並ぶ
+            self.assertTrue(app.s_list.tag_ranges("hit"))                 # 一致した語に黄色のマーカー
+            app.s_re.set(True)
+            app.s_q.delete(0, "end")
+            app.s_q.insert(0, r"第\d+条")
+            app.do_search()
+            self.assertTrue(app.s_hits)
             app.do_lint()
             self.assertIn("エラー 0 件", app.l_info.cget("text"))
         finally:

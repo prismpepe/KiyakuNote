@@ -49,7 +49,7 @@ def settle(app, ms=400):
 
 def main():
     app = App()
-    app.geometry("1180x760+60+40")
+    app.geometry("1280x820+40+30")
     app.attributes("-topmost", True)
     app.lift()
     settle(app, 600)
@@ -66,6 +66,15 @@ def main():
     app.do_search()
     settle(app)
     grab(app, "02-search.png")
+
+    # 2b. 正規表現の検索（一致した語は黄色）
+    app.s_q.delete(0, "end")
+    app.s_q.insert(0, "第[0-9]+条")
+    app.s_re.set(True)
+    app.do_search()
+    settle(app)
+    grab(app, "02b-regex.png")
+    app.s_re.set(False)
 
     # 3. 整合性チェック
     # 見せるために、一時的に誤りを入れる（撮り終えたら元に戻す）
@@ -116,6 +125,33 @@ def main():
     app.on_rev()
     settle(app)
     grab(app, "06-revisions.png")
+
+    # 6b. 変更履歴（git のコマンドを使わずに履歴・差分を見られる）
+    app.nb.select(app.tab_hist)
+    app.fill_hist()
+    kids = app.h_tree.get_children()
+    if kids:
+        app.h_tree.selection_set(kids[0])
+        app.hist_show_selected()
+    settle(app, 600)
+    grab(app, "09-history.png")
+
+    # 6c. 別表・別紙の表（罫線つき）
+    app.nb.select(app.tab_read)
+    first_tbl = next((i for i, d in app.reg.docs.items() if d.kind == "別表"), None)
+    if first_tbl:
+        app.tree.selection_set(first_tbl)
+        app.tree.see(first_tbl)
+        app.on_tree()
+        settle(app, 600)
+        grab(app, "08-table.png")
+
+    # 6d. 表示設定
+    from kiyakunote.gui_settings import SettingsDialog
+    dlg = SettingsDialog(app)
+    settle(dlg, 800)
+    grab(dlg, "10-settings.png")
+    dlg.destroy()
 
     # 7. 条の編集画面
     app.nb.select(app.tab_read)

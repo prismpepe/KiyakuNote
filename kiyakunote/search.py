@@ -127,18 +127,35 @@ def build_index(reg, db_path):
     return ix.n
 
 
-def search(db_path, query, doc=None, kind=None, level=None, limit=50):
-    """空白区切りの語をすべて含む行を返す。3文字以上はFTS（部分一致）、1〜2文字はLIKE。"""
+def compile_regex(query):
+    """検索語を正規表現として使えるようにする。全角・半角を区別しない索引に合わせ、式も NFKC にそろえる。"""
+    try:
+        pat = re.compile(unicodedata.normalize("NFKC", query), re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"正規表現が正しくありません: {e}") from e
+    if pat.search(""):
+        raise ValueError("空の文字列に一致する式は使えません（例: a* や .*）")
+    return pat
+
+
+def search(db_path, query, doc=None, kind=None, level=None, limit=50, regex=False):
+    """空白区切りの語をすべて含む行を返す。3文字以上はFTS（部分一致）、1〜2文字はLIKE。
+    regex=True なら、検索語全体を1つの正規表現として、本文（全角・半角をそろえたもの）に当てる。"""
     con = sqlite3.connect(str(db_path))
     where, args = [], []
-    terms = norm(query).split(" ")
-    for t in [t for t in terms if t]:
-        if len(t) >= 3:
-            where.append("id in (select rowid from fts where fts match ?)")
-            args.append('"' + t.replace('"', '""') + '"')
-        else:
-            where.append("ntext like ? escape '\\'")
-            args.append("%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+    if regex:
+        pat = compile_regex(query)
+        con.create_function("kn_regexp", 1, lambda s: 1 if s is not None and pat.search(s) else 0)
+        where.append("kn_regexp(ntext)")
+    else:
+        terms = norm(query).split(" ")
+        for t in [t for t in terms if t]:
+            if len(t) >= 3:
+                where.append("id in (select rowid from fts where fts match ?)")
+                args.append('"' + t.replace('"', '""') + '"')
+            else:
+                where.append("ntext like ? escape '\\'")
+                args.append("%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
     if doc:
         where.append("doc = ?")
         args.append(doc)
@@ -155,15 +172,42 @@ def search(db_path, query, doc=None, kind=None, level=None, limit=50):
     return rows
 
 
-def snippet(text, query, width=40):
-    t = norm(text)
-    terms = [x for x in norm(query).split(" ") if x]
-    for term in terms:
+def find_spans(t, query, regex=False):
+    """正規化した文 t の中で、検索語に一致する範囲 [(開始, 終了)]。"""
+    if regex:
+        pat = compile_regex(query)
+        return [m.span() for m in pat.finditer(t) if m.end() > m.start()]
+    spans = []
+    for term in [x for x in norm(query).split(" ") if x]:
         i = t.find(term)
-        if i >= 0:
-            s = max(0, i - width)
-            return ("…" if s else "") + t[s:i] + "【" + t[i:i + len(term)] + "】" + t[i + len(term):i + len(term) + width] + ("…" if len(t) > i + len(term) + width else "")
-    return t[:width * 2]
+        while i >= 0:
+            spans.append((i, i + len(term)))
+            i = t.find(term, i + len(term))
+    return sorted(spans)
+
+
+def excerpt(text, query, width=40, regex=False):
+    """抜粋と、その中の一致範囲 [(開始, 終了)]（画面で色を付けるため）。最初の一致の前後 width 文字。"""
+    t = norm(text)
+    spans = find_spans(t, query, regex)
+    if not spans:
+        return t[:width * 2], []
+    s0, e0 = spans[0]
+    s = max(0, s0 - width)
+    e = min(len(t), e0 + width)
+    pre = "…" if s else ""
+    out = pre + t[s:e] + ("…" if e < len(t) else "")
+    shift = len(pre) - s
+    return out, [(a + shift, b + shift) for a, b in spans if a >= s and b <= e]
+
+
+def snippet(text, query, width=40, regex=False, brackets=True):
+    """抜粋。brackets=True（コマンド用）は一致を【】で囲む。画面では excerpt で色を付ける。"""
+    out, spans = excerpt(text, query, width, regex)
+    if not brackets or not spans:
+        return out
+    a, b = spans[0]
+    return out[:a] + "【" + out[a:b] + "】" + out[b:]
 
 
 def refs_of(db_path, ident):
@@ -174,8 +218,10 @@ def refs_of(db_path, ident):
     base = ([nid] + ([doc] if doc else []))
     art = con.execute("select article_id from nodes where node_id = ?" + q, base).fetchone()
     art_id = art[0] if art else nid
+    # 条のIDは細則どうしで同じものがある（art-011 など）ので、参照元の文書でも絞る
     out = con.execute("select from_label, to_doc, to_label from refs where from_id in "
-                      "(select node_id from nodes where article_id = ?" + q + ")", [art_id] + ([doc] if doc else [])).fetchall()
+                      "(select node_id from nodes where article_id = ?" + q + ")" + (" and from_doc = ?" if doc else ""),
+                      [art_id] + ([doc, doc] if doc else [])).fetchall()
     inc = con.execute("select from_doc, from_label, to_label from refs where to_article = ? and from_article != to_article"
                       + (" and to_doc = ?" if doc else ""),
                       [art_id] + ([doc] if doc else [])).fetchall()
