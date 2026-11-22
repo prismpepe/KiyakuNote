@@ -345,3 +345,13 @@ def unmerge(cells, i):
     out += [(r + dr, c + dc, 1, 1, lines[dr * cs + dc] if spread else (t if (dr, dc) == (0, 0) else ""), th)
             for dr in range(rs) for dc in range(cs)]
     return out
+
+
+def unmerge_to(cells, i, parts):
+    """i 番目のセルを、結合する前の parts（結合前のセルの一覧。結合した順）に戻す。文字は、行数が parts の数と同じなら1行ずつ、違えば最初のセルに入れる。"""
+    r, c, rs, cs, text, th = cells[i]
+    lines = text.split(chr(10))
+    texts = lines if len(lines) == len(parts) else [text] + [""] * (len(parts) - 1)
+    out = [x for k, x in enumerate(cells) if k != i]
+    out += [(pr, pc, prs, pcs, tx, pth) for (pr, pc, prs, pcs, _, pth), tx in zip(parts, texts)]
+    return out

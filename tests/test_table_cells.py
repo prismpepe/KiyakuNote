@@ -97,6 +97,16 @@ class MergeTest(unittest.TestCase):
         self.assertIsNone(T.validate_cells(d))
         self.assertEqual(next(c for c in d if c[4] == "a\nc")[2], 2)
 
+    def test_unmerge_to_parts(self):
+        # 結合前に、右のセルがすでに結合セルだったとき、解除で結合前の形に戻る
+        cells = T.parse_table('<table><tr><td>x</td><td colspan="2">y</td></tr><tr><td>1</td><td>2</td><td>3</td></tr></table>')
+        i = next(k for k, c in enumerate(cells) if c[4] == "x")
+        m = T.merge_right(cells, i)
+        j = next(k for k, c in enumerate(m) if c[4] == "x" + chr(10) + "y")
+        gone = sorted((x for x in cells if x not in m), key=lambda x: (x[0], x[1]))
+        self.assertEqual(sorted(T.unmerge_to(m, j, gone)), sorted(cells))
+        self.assertEqual(len(T.unmerge(m, j)), 6)                  # 単なる解除は、1行3列を3つの枠に分ける
+
     def test_merge_refused(self):
         cells = T.parse_table(SAMPLE)
         tall = next(k for k, c in enumerate(cells) if c[4] == "縦")

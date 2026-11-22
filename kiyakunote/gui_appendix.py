@@ -27,6 +27,7 @@ class TableEditDialog(tk.Toplevel):
         self.xlsx = None                                   # 「Excelで編集」で作った一時ファイル
         self.cells, self.entries, self.cur = [], [], 0
         self.history = []                                  # 行・列・結合の操作の前の状態（「操作を元に戻す」用）
+        self.parts = {}                                    # 結合したセル (行, 列, 行の幅, 列の幅) → 結合前のセルの一覧（解除で元の形に戻す）
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=(10, 4))
         self.which = ttk.Combobox(top, state="readonly", width=24, values=[f"表{i + 1}" for i in range(len(self.tables))])
@@ -91,7 +92,7 @@ class TableEditDialog(tk.Toplevel):
         return self.which.current() if self.which.current() >= 0 else 0
 
     def load(self):
-        self.history = []
+        self.history, self.parts = [], {}
         self.set_cells(T.fill_holes(self.tables[self.index()]["cells"]))
 
     # ---- 格子の表示 ----
@@ -135,12 +136,26 @@ class TableEditDialog(tk.Toplevel):
         if not self.cells:
             return
         self.sync()
+        old = self.cells
         try:
-            new = fn(self.cells, *a)
+            if fn is T.unmerge and a:
+                cell = old[a[0]]
+                parts = self.parts.pop(cell[:4], None)
+                new = T.unmerge_to(old, a[0], parts) if parts else T.unmerge(old, a[0])
+            else:
+                new = fn(old, *a)
         except ValueError as e:
             messagebox.showinfo("できません", str(e), parent=self)
             return
-        self.history.append(self.cells)
+        parts_before = dict(self.parts)
+        if fn in (T.merge_right, T.merge_down):                  # 結合前のセルを覚えておき、解除で元の形に戻す
+            gone = [x for x in old if x not in new]
+            added = [x for x in new if x not in old]
+            if len(added) == 1:
+                self.parts[added[0][:4]] = sorted(gone, key=lambda x: (x[0], x[1]))
+        elif fn is not T.unmerge:
+            self.parts = {}                                      # 行・列の操作で位置が変わるので、記録は捨てる
+        self.history.append((old, parts_before))
         self.set_cells(new)
 
     def undo_op(self):
@@ -149,7 +164,8 @@ class TableEditDialog(tk.Toplevel):
             messagebox.showinfo("元に戻す", "元に戻せる操作がありません。", parent=self)
             return
         self.sync()
-        self.set_cells(self.history.pop())
+        cells, self.parts = self.history.pop()
+        self.set_cells(cells)
 
     def merge(self, fn):
         """いま選んでいる枠を、右・下の枠と結合する／結合を解除する。"""
@@ -207,7 +223,8 @@ class TableEditDialog(tk.Toplevel):
         if not messagebox.askyesno("Excelから取り込み", f"Excel の表（{nr}行×{nc}列）で、いま画面にある表を置き換えます。よろしいですか？\n（「保存」するまで、条文のファイルは変わりません）", parent=self):
             return
         self.sync()
-        self.history.append(self.cells)
+        self.history.append((self.cells, dict(self.parts)))
+        self.parts = {}
         self.cur = 0
         self.set_cells(cells)
 
