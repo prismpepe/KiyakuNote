@@ -187,6 +187,11 @@ class App(tk.Tk):
         pw.add(right, weight=3)
         return f
 
+    def table_width(self):
+        """条文の表示欄で、表に使える幅（画素）。"""
+        self.update_idletasks()
+        return max(600, self.body.winfo_width() - 40)
+
     def body_wheel(self, e):
         """ホイールは、行でなくピクセル単位で動かす（表は高い1行として埋め込まれているので、行単位だと途中が飛ぶ）。"""
         self.body.yview_scroll(int(-e.delta / 120 * 60), "pixels")
@@ -327,7 +332,7 @@ class App(tk.Tk):
             for kind, chunk in split_body(d.raw_body):
                 if kind in ("table", "mdtable"):
                     cells = parse_table(chunk) if kind == "table" else parse_md_table(chunk)
-                    fr = table_frame(w, cells, self.styler.f_ui, self.styler.f_ui_bold, wheel)
+                    fr = table_frame(w, cells, self.styler.f_ui, self.styler.f_ui_bold, wheel, width=self.table_width())
                     w.window_create("end", window=fr, padx=2, pady=6)
                     w.insert("end", "\n")
                 else:
@@ -376,7 +381,7 @@ class App(tk.Tk):
             w.insert("end", endmatter.HISTORY_TITLE + "\n", ("h2",))
             revs = endmatter.history_for(load_revisions(), self.versions[self.ver.get()])
             wheel = self.body_wheel
-            fr = table_frame(w, endmatter.history_cells(revs), self.styler.f_ui, self.styler.f_ui_bold, wheel)
+            fr = table_frame(w, endmatter.history_cells(revs), self.styler.f_ui, self.styler.f_ui_bold, wheel, width=self.table_width())
             w.window_create("end", window=fr, padx=2, pady=6)
             w.insert("end", "\n")
         else:
