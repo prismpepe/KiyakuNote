@@ -90,6 +90,8 @@ class App(tk.Tk):
     def done(self, msg=""):
         self.status.set(msg)
         self.config(cursor="")
+        if hasattr(self, "btn_edit"):
+            self.update_buttons()
 
     def _top(self):
         f = ttk.Frame(self)
@@ -134,6 +136,7 @@ class App(tk.Tk):
             messagebox.showerror("読み込めません", str(e))
             return
         self.fill_tree()
+        self.update_buttons()
         names = ["（すべて）"] + [d.title for d in sorted(self.reg.docs.values(), key=doc_order)
                                    if d.kind not in APPENDIX_KINDS]
         self.s_doc["values"] = names
@@ -147,22 +150,18 @@ class App(tk.Tk):
         f = ttk.Frame(self.nb)
         bar = ttk.Frame(f)
         bar.pack(fill="x", pady=(6, 4))
-        ttk.Button(bar, text="Markdownエディタで開く…", command=self.open_md_editor).pack(side="right", padx=2)
-        ttk.Button(bar, text="この条を変更…", command=self.edit_selected).pack(side="left", padx=2)
-        ttk.Button(bar, text="条を新設…", command=self.new_article).pack(side="left", padx=2)
-        ttk.Button(bar, text="この条を削除…", command=self.delete_selected).pack(side="left", padx=2)
-        ttk.Button(bar, text="直前の保存を元に戻す", command=self.undo_last).pack(side="left", padx=14)
-        ttk.Label(bar, text="（編集は「作業中の src/」のときだけ）", style="Hint.TLabel").pack(side="left")
-        bar2 = ttk.Frame(f)
-        bar2.pack(fill="x", pady=(0, 4))
-        ttk.Label(bar2, text="別表・別紙・別図:", style="Hint.TLabel").pack(side="left", padx=(4, 6))
-        ttk.Button(bar2, text="表を編集…", command=self.appendix_edit_table).pack(side="left", padx=2)
-        ttk.Button(bar2, text="画像を差し替え…", command=self.appendix_replace_image).pack(side="left", padx=2)
-        ttk.Button(bar2, text="新設…", command=self.appendix_new).pack(side="left", padx=2)
-        ttk.Button(bar2, text="削除…", command=self.appendix_delete).pack(side="left", padx=2)
-        ttk.Label(bar2, text="（先に左の一覧で選ぶ）", style="Hint.TLabel").pack(side="left", padx=6)
-        ttk.Button(bar2, text="改訂履歴を編集…", command=self.edit_history).pack(side="left", padx=(14, 2))
-        ttk.Button(bar2, text="署名を編集…", command=self.edit_sign).pack(side="left", padx=2)
+        self.btn_md = ttk.Button(bar, text="Markdownエディタで開く…", command=self.open_md_editor)
+        self.btn_md.pack(side="right", padx=2)
+        self.btn_edit = ttk.Button(bar, text="編集…", width=18, command=self.do_edit)
+        self.btn_edit.pack(side="left", padx=2)
+        self.btn_new = ttk.Button(bar, text="新設…", width=18, command=self.do_new)
+        self.btn_new.pack(side="left", padx=2)
+        self.btn_del = ttk.Button(bar, text="削除…", width=18, command=self.do_delete)
+        self.btn_del.pack(side="left", padx=2)
+        self.btn_undo = ttk.Button(bar, text="直前の保存を元に戻す", command=self.undo_last)
+        self.btn_undo.pack(side="left", padx=14)
+        self.btn_hint = ttk.Label(bar, text="", style="Hint.TLabel")
+        self.btn_hint.pack(side="left")
         pw = ttk.PanedWindow(f, orient="horizontal")
         pw.pack(fill="both", expand=True)
         left = ttk.Frame(pw)
@@ -265,6 +264,10 @@ class App(tk.Tk):
             w.see(f"1.0+{spans[0][0]}c")
 
     def on_tree(self, _=None):
+        self._on_tree()
+        self.update_buttons()
+
+    def _on_tree(self):
         sel = self.tree.selection()
         if not sel:
             return
@@ -536,6 +539,102 @@ class App(tk.Tk):
             self.update_git_state()
             self.done(f"{path.name} の変更を読み込みました")
         self.after(1500, self.poll_watch)
+
+    # ---- 編集・新設・削除ボタン（選んでいる項目に応じて働きを変える）----
+    def context(self):
+        """左の一覧で選んでいる項目の種類: article / heading / doc / appendix / history / sign / None。"""
+        sel = self.tree.selection()
+        if not sel:
+            return {"kind": None}
+        iid = sel[0]
+        if iid == "@history":
+            return {"kind": "history"}
+        if iid == "@sign":
+            return {"kind": "sign"}
+        if "|h|" in iid:
+            return {"kind": "heading", "doc": self.reg.docs.get(iid.split("|")[0])}
+        if "|" in iid:
+            did, art = self.selected_article()
+            return {"kind": "article", "doc": self.reg.docs.get(did), "art": art}
+        d = self.reg.docs.get(iid)
+        if d is None:
+            return {"kind": None}
+        return {"kind": "appendix" if d.kind in APPENDIX_KINDS else "doc", "doc": d}
+
+    def update_buttons(self):
+        """選んでいる項目で、できる操作だけを有効にし、ボタンの名前も合わせる。できない操作はグレーにする。"""
+        from .tables import list_tables
+        work = self.versions[self.ver.get()] == "WORKTREE"
+        c = self.context()
+        k, d = c["kind"], c.get("doc")
+        edit = new = dele = None                                   # (名前, 有効か)
+        if k == "article":
+            edit, new, dele = "条を編集…", "条を新設…", "条を削除…"
+            dele_ok = c["art"] is not None and not c["art"].deleted
+            states = (c["art"] is not None, True, dele_ok)
+        elif k in ("heading", "doc"):
+            edit, new, dele = "編集…", "条を新設…" if k == "heading" else "新設…", "削除…"
+            states = (False, True, False)
+        elif k == "appendix":
+            deleted = d.meta.get("deleted") == "true"
+            has_tbl = bool(list_tables(d.raw_body))
+            has_img = "![" in d.raw_body
+            edit = "表を編集…" if has_tbl else "画像を差し替え…" if has_img else "編集…"
+            new, dele = "別表等を新設…", "別表等を削除…"
+            states = (not deleted and (has_tbl or has_img), True, not deleted)
+        elif k == "history":
+            edit, new, dele = "改訂履歴を編集…", "新設…", "削除…"
+            states = (True, False, False)
+        elif k == "sign":
+            edit, new, dele = "署名を編集…", "新設…", "削除…"
+            states = (True, False, False)
+        else:
+            edit, new, dele = "編集…", "新設…", "削除…"
+            states = (False, False, False)
+        for btn, text, ok in zip((self.btn_edit, self.btn_new, self.btn_del), (edit, new, dele), states):
+            btn.configure(text=text, state="normal" if work and ok else "disabled")
+        self.btn_undo.configure(state="normal" if work and self.undo else "disabled")
+        md_ok = work and k is not None and mdedit.file_for_node(self.tree.selection()[0], self.reg, getattr(self.reg, "src_dir", ROOT / "src")) is not None
+        self.btn_md.configure(state="normal" if md_ok else "disabled")
+        self.btn_hint.configure(text="" if work else "（編集できるのは「作業中の src/」のときだけ）")
+
+    def do_edit(self):
+        k = self.context()["kind"]
+        if k == "article":
+            self.edit_selected()
+        elif k == "history":
+            self.edit_history()
+        elif k == "sign":
+            self.edit_sign()
+        elif k == "appendix":
+            from .tables import list_tables
+            d = self.context()["doc"]
+            has_tbl, has_img = bool(list_tables(d.raw_body)), "![" in d.raw_body
+            if has_tbl and has_img and messagebox.askyesno("編集", "この文書には表と画像があります。\n表を編集しますか？（「いいえ」で画像の差し替え）"):
+                self.appendix_edit_table()
+            elif has_tbl and not has_img:
+                self.appendix_edit_table()
+            else:
+                self.appendix_replace_image()
+
+    def do_new(self):
+        k = self.context()["kind"]
+        if k in ("article", "heading"):
+            self.new_article()
+        elif k == "appendix":
+            self.appendix_new()
+        elif k == "doc":
+            m = tk.Menu(self, tearoff=0)                           # 文書を選んでいるときは、条か別表等かを選ぶ
+            m.add_command(label="条を新設…", command=self.new_article)
+            m.add_command(label="別表・別紙・別図を新設…", command=self.appendix_new)
+            m.tk_popup(self.btn_new.winfo_rootx(), self.btn_new.winfo_rooty() + self.btn_new.winfo_height())
+
+    def do_delete(self):
+        k = self.context()["kind"]
+        if k == "article":
+            self.delete_selected()
+        elif k == "appendix":
+            self.appendix_delete()
 
     def can_edit(self):
         if self.versions[self.ver.get()] != "WORKTREE":
