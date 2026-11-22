@@ -173,8 +173,9 @@ class App(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self.on_tree)
         right = ttk.Frame(pw)
         self.body = self.styler.text_widget(right, "text", wrap="char", height=8, spacing1=3, spacing3=3)
-        sb2 = ttk.Scrollbar(right, command=self.body.yview)
+        sb2 = ttk.Scrollbar(right, command=self.body_yview)
         self.body.configure(yscrollcommand=sb2.set, state="disabled")
+        self.body.bind("<MouseWheel>", self.body_wheel)
         self.body.pack(side="top", fill="both", expand=True)
         ttk.Label(right, text="この条が参照している先／この条を参照している元").pack(anchor="w", pady=(6, 0))
         self.refs_box = self.styler.text_widget(right, "input", wrap="char", height=4, state="disabled")
@@ -185,6 +186,19 @@ class App(tk.Tk):
         pw.add(left, weight=1)
         pw.add(right, weight=3)
         return f
+
+    def body_wheel(self, e):
+        """ホイールは、行でなくピクセル単位で動かす（表は高い1行として埋め込まれているので、行単位だと途中が飛ぶ）。"""
+        self.body.yview_scroll(int(-e.delta / 120 * 60), "pixels")
+        return "break"
+
+    def body_yview(self, *a):
+        if len(a) == 3 and a[0] == "scroll" and a[2] == "units":      # スクロールバーの矢印・クリックも同様
+            self.body.yview_scroll(int(a[1]) * 40, "pixels")
+        elif len(a) == 3 and a[0] == "scroll" and a[2] == "pages":
+            self.body.yview_scroll(int(a[1]) * max(100, self.body.winfo_height() - 40), "pixels")
+        else:
+            self.body.yview(*a)
 
     def fill_tree(self):
         self.tree.delete(*self.tree.get_children())
@@ -309,7 +323,7 @@ class App(tk.Tk):
         if d.meta.get("deleted") == "true":
             w.insert("end", "（削除）\n")
         elif "<tr" in d.raw_body or re.search(r"(?m)^\s*\|.*\|\s*$", d.raw_body):
-            wheel = lambda e: w.yview_scroll(-1 if e.delta > 0 else 1, "units")             # noqa: E731
+            wheel = self.body_wheel
             for kind, chunk in split_body(d.raw_body):
                 if kind in ("table", "mdtable"):
                     cells = parse_table(chunk) if kind == "table" else parse_md_table(chunk)
@@ -361,7 +375,7 @@ class App(tk.Tk):
         if iid == "@history":
             w.insert("end", endmatter.HISTORY_TITLE + "\n", ("h2",))
             revs = endmatter.history_for(load_revisions(), self.versions[self.ver.get()])
-            wheel = lambda e: w.yview_scroll(-1 if e.delta > 0 else 1, "units")             # noqa: E731
+            wheel = self.body_wheel
             fr = table_frame(w, endmatter.history_cells(revs), self.styler.f_ui, self.styler.f_ui_bold, wheel)
             w.window_create("end", window=fr, padx=2, pady=6)
             w.insert("end", "\n")
