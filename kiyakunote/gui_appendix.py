@@ -26,6 +26,7 @@ class TableEditDialog(tk.Toplevel):
         self.tables = self.get_tables()
         self.xlsx = None                                   # 「Excelで編集」で作った一時ファイル
         self.cells, self.entries, self.cur = [], [], 0
+        self.history = []                                  # 行・列・結合の操作の前の状態（「操作を元に戻す」用）
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=(10, 4))
         self.which = ttk.Combobox(top, state="readonly", width=24, values=[f"表{i + 1}" for i in range(len(self.tables))])
@@ -47,6 +48,7 @@ class TableEditDialog(tk.Toplevel):
         for text, cmd in (("右のセルと結合", lambda: self.merge(T.merge_right)), ("下のセルと結合", lambda: self.merge(T.merge_down)),
                           ("結合を解除", lambda: self.merge(T.unmerge))):
             ttk.Button(mb, text=text, command=cmd).pack(side="left", padx=3)
+        ttk.Button(mb, text="操作を元に戻す", command=self.undo_op).pack(side="left", padx=(18, 3))
         xb = ttk.Frame(self)
         xb.pack(fill="x", padx=10, pady=2)
         ttk.Label(xb, text="Excel:", style="Hint.TLabel").pack(side="left", padx=(0, 6))
@@ -89,6 +91,7 @@ class TableEditDialog(tk.Toplevel):
         return self.which.current() if self.which.current() >= 0 else 0
 
     def load(self):
+        self.history = []
         self.set_cells(T.fill_holes(self.tables[self.index()]["cells"]))
 
     # ---- 格子の表示 ----
@@ -137,7 +140,16 @@ class TableEditDialog(tk.Toplevel):
         except ValueError as e:
             messagebox.showinfo("できません", str(e), parent=self)
             return
+        self.history.append(self.cells)
         self.set_cells(new)
+
+    def undo_op(self):
+        """直前の行・列・結合の操作（Excel の取り込みも）を元に戻す。"""
+        if not self.history:
+            messagebox.showinfo("元に戻す", "元に戻せる操作がありません。", parent=self)
+            return
+        self.sync()
+        self.set_cells(self.history.pop())
 
     def merge(self, fn):
         """いま選んでいる枠を、右・下の枠と結合する／結合を解除する。"""
@@ -194,6 +206,8 @@ class TableEditDialog(tk.Toplevel):
         nr, nc = T.table_size(cells)
         if not messagebox.askyesno("Excelから取り込み", f"Excel の表（{nr}行×{nc}列）で、いま画面にある表を置き換えます。よろしいですか？\n（「保存」するまで、条文のファイルは変わりません）", parent=self):
             return
+        self.sync()
+        self.history.append(self.cells)
         self.cur = 0
         self.set_cells(cells)
 

@@ -91,6 +91,7 @@ class MergeTest(unittest.TestCase):
         u = T.unmerge(m, j)
         self.assertIsNone(T.validate_cells(u))
         self.assertEqual(len(u), len(cells))
+        self.assertEqual(sorted(u), sorted(cells))                 # 結合して解除すると、文字も含めて元に戻る
         k = next(k for k, c in enumerate(cells) if c[4] == "a")
         d = T.merge_down(cells, k)                                  # a と c を結合
         self.assertIsNone(T.validate_cells(d))

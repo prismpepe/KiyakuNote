@@ -335,10 +335,13 @@ def merge_down(cells, i):
 
 
 def unmerge(cells, i):
-    """i 番目のセルの結合を解除する（文字は左上のセルに残す）。"""
+    """i 番目のセルの結合を解除する。文字は、行数がセルの数と同じなら1行ずつ各セルへ、そうでなければ左上のセルに残す。"""
     r, c, rs, cs, t, th = cells[i]
     if rs == 1 and cs == 1:
         raise ValueError("このセルは結合されていません")
     out = [x for k, x in enumerate(cells) if k != i]
-    out += [(r + dr, c + dc, 1, 1, t if (dr, dc) == (0, 0) else "", th) for dr in range(rs) for dc in range(cs)]
+    lines = t.split("\n")
+    spread = len(lines) == rs * cs                            # 結合でつないだ文字（改行区切り）なら、元のセルに振り分ける
+    out += [(r + dr, c + dc, 1, 1, lines[dr * cs + dc] if spread else (t if (dr, dc) == (0, 0) else ""), th)
+            for dr in range(rs) for dc in range(cs)]
     return out
