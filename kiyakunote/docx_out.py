@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from docx import Document
-from docx.enum.section import WD_ORIENT
+from docx.enum.section import WD_ORIENT, WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
@@ -269,13 +269,15 @@ def write_appendix(doc, reg, parent, app, src_dir):
             para(doc, ln.strip())
 
 
-def write_endmatter(doc, revs, src_dir):
-    """巻末: 改訂履歴の表と、理事長の署名（奥書）。"""
-    if revs:
-        doc.add_page_break()
-        para(doc, endmatter.HISTORY_TITLE, bold=True, size=12, after=6, keep=True)
-        rows = endmatter.history_rows(revs)
-        write_table(doc, [[Cell(txt, header=(i == 0)) for txt in row] for i, row in enumerate(rows)])
+def write_history(doc, revs):
+    """改訂履歴の表。"""
+    para(doc, endmatter.HISTORY_TITLE, bold=True, size=12, after=6, keep=True)
+    rows = endmatter.history_rows(revs)
+    write_table(doc, [[Cell(txt, header=(i == 0)) for txt in row] for i, row in enumerate(rows)])
+
+
+def write_signature(doc, src_dir):
+    """理事長の署名（奥書）。無ければ何も書かない。"""
     sign = endmatter.load_okugaki(src_dir)
     if sign:
         para(doc, "", after=12)
@@ -284,6 +286,14 @@ def write_endmatter(doc, revs, src_dir):
             for ln in s.split("\n"):
                 para(doc, ln, align=WD_ALIGN_PARAGRAPH.RIGHT if i > 0 else None, after=2 if not last else 0)
             para(doc, "", after=6)
+
+
+def write_endmatter(doc, revs, src_dir):
+    """巻末: 改訂履歴の表と、理事長の署名（奥書）。"""
+    if revs:
+        doc.add_page_break()
+        write_history(doc, revs)
+    write_signature(doc, src_dir)
 
 
 def build_docx(reg, d, path, src_dir="src", revisions=None):
@@ -376,3 +386,132 @@ def build_compare_docx(reg_old, reg_new, label_old, label_new, path, notes=None)
         if len(notes) > 80:
             para(doc, f"・ほか {len(notes) - 80} 件", size=9)
     doc.save(str(path))
+
+
+# ---- 冊子（一冊の管理規約） ----
+
+def set_outline(p, level):
+    """段落に、目次に載る見出しレベル（1〜）を付ける。"""
+    ppr = p._p.get_or_add_pPr()
+    el = OxmlElement("w:outlineLvl")
+    el.set(qn("w:val"), str(level - 1))
+    ppr.append(el)
+
+
+def start_part(doc, header=""):
+    """新しいページ（セクション）を始め、そのページのヘッダーの文字を決める。"""
+    sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    sec.header.is_linked_to_previous = False
+    hp = sec.header.paragraphs[0]
+    hp.text = header
+    hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    for r in hp.runs:
+        r.font.size = Pt(8)
+    return sec
+
+
+def field_paragraphs(doc, instr, cached):
+    """複数の段落にまたがるフィールド（目次）を書く。cached は、更新前に見せる [(レベル, 文字)]。"""
+    paras = []
+    for lv, text in cached:
+        paras.append(para(doc, text, left=(lv - 1) * 1.5, bold=True if lv == 1 else None, before=4 if lv == 1 else 0, after=1))
+    if not paras:
+        return
+
+    def fld(p, typ=None, text=None, first=False):
+        run = p.add_run()
+        el = OxmlElement("w:fldChar" if typ else "w:instrText")
+        if typ:
+            el.set(qn("w:fldCharType"), typ)
+        else:
+            el.set(qn("xml:space"), "preserve")
+            el.text = text
+        run._r.append(el)
+        if first:
+            p._p.remove(run._r)
+            p._p.insert(1 if p._p.pPr is not None else 0, run._r)
+
+    first = paras[0]
+    # 先頭の段落の、文字の前に「開始・命令・区切り」を入れる（逆順に先頭へ差し込む）
+    for typ, text in (("separate", None), (None, instr), ("begin", None)):
+        fld(first, typ, text, first=True)
+    fld(paras[-1], "end")
+
+
+def build_book(reg, plan, path, src_dir="src", revisions=None, title=""):
+    """冊子の構成 plan（book.parse_book の結果）に従って、一冊の .docx を書く。"""
+    docs = reg.docs
+    doc = new_document(header="")
+    toc = []
+    for key, val in plan:
+        if key == "中表紙":
+            toc.append((1, val))
+        elif key == "文書" and val in docs:
+            toc.append((2, docs[val].title))
+        elif key == "改訂履歴":
+            toc.append((1, endmatter.HISTORY_TITLE))
+    cover = [v for k, v in plan if k == "表紙"]
+    first_part, prev = True, None
+    for n, line in enumerate(cover):
+        para(doc, line, WD_ALIGN_PARAGRAPH.CENTER, size=26 if n == 0 else 14, bold=True if n == 0 else None,
+             before=230 if n == 0 else 0, after=20 if n == 0 else 8)
+    first_part = not cover                                        # 表紙があれば、最初の項目は新しいページから
+    for key, val in plan:
+        if key == "目次":
+            if not first_part:
+                start_part(doc, "")
+            first_part = False
+            para(doc, "目　次", WD_ALIGN_PARAGRAPH.CENTER, size=15, bold=True, before=6, after=12)
+            field_paragraphs(doc, 'TOC \\u \\h \\z', toc)
+            _add_update_fields(doc)
+        elif key == "中表紙":
+            if not first_part:
+                start_part(doc, "")
+            first_part = False
+            p = para(doc, val, WD_ALIGN_PARAGRAPH.CENTER, size=28, bold=True, before=250)
+            set_outline(p, 1)
+        elif key == "文書":
+            d = docs[val]
+            if not first_part:
+                start_part(doc, d.title)
+            first_part = False
+            n0 = len(doc.paragraphs)
+            write_doc_body(doc, reg, d)
+            set_outline(doc.paragraphs[n0], 2)
+        elif key == "別表等":
+            d = docs[val]
+            for ent in d.meta.get("appendices", []):
+                app = reg.docs.get(ent.partition(":")[0])
+                if app:
+                    write_appendix(doc, reg, d, app, src_dir)
+        elif key == "改訂履歴":
+            if revisions:
+                if not first_part:
+                    start_part(doc, endmatter.HISTORY_TITLE)
+                first_part = False
+                n0 = len(doc.paragraphs)
+                write_history(doc, revisions)
+                set_outline(doc.paragraphs[n0], 1)
+        elif key == "署名":
+            if prev != "改訂履歴" or not revisions:
+                if not first_part:
+                    start_part(doc, "")
+                first_part = False
+            write_signature(doc, src_dir)
+        prev = key
+    doc.save(str(path))
+
+
+def _add_update_fields(doc):
+    """Wordで開いたときに、目次のページ番号を更新する確認が出る設定（設定ファイルの決まった位置に入れる）。"""
+    st = doc.settings.element
+    if st.find(qn("w:updateFields")) is not None:
+        return
+    el = OxmlElement("w:updateFields")
+    el.set(qn("w:val"), "true")
+    for tag in ("w:hdrShapeDefaults", "w:footnotePr", "w:endnotePr", "w:compat", "w:docVars", "w:rsids"):
+        found = st.find(qn(tag))
+        if found is not None:
+            found.addprevious(el)
+            return
+    st.append(el)

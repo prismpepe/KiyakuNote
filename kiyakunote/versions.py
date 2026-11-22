@@ -149,7 +149,7 @@ def load_version(ref, repo=ROOT):
         n = n.strip().strip('"')
         if n.endswith(".md"):
             dest = tmp / Path(n).name
-        elif n.startswith("src/assets/") or n == "src/okugaki.txt":      # 画像と奥書も取り出す（画面・Word出力で使う）
+        elif n.startswith("src/assets/") or n in ("src/okugaki.txt", "src/book.txt"):      # 画像と奥書も取り出す（画面・Word出力で使う）
             dest = tmp / n[len("src/"):]
             dest.parent.mkdir(parents=True, exist_ok=True)
         else:

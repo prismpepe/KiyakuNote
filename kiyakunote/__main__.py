@@ -46,10 +46,28 @@ def cmd_docx(a):
         return 1
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    rp = Path(a.src) / "revisions.yaml"
+    from .versions import load_revisions
+    revs = load_revisions(rp) if rp.exists() else None
+    if a.book:                                              # 一冊の管理規約（構成は src/book.txt。無ければ既定）
+        from . import book
+        from .docx_out import build_book
+        plan = book.plan_for(reg, a.src)
+        errs, notes = book.check_plan(reg, plan)
+        if errs:
+            print("冊子の構成にエラーがある:\n  " + "\n  ".join(errs))
+            return 1
+        main = next((d for d in reg.docs.values() if d.kind == "規約"), None)
+        path = out / f"{main.title if main else '管理規約'}（全体）.docx"
+        build_book(reg, plan, path, src_dir=a.src, revisions=revs)
+        print("出力:", path)
+        for n in notes:
+            print("注意:", n)
+        return 0
     for d in reg.docs.values():
         if d.kind in APPENDIX_KINDS or (a.doc and d.id != a.doc):
             continue
-        build_docx(reg, d, out / f"{d.id}.docx", src_dir=a.src)
+        build_docx(reg, d, out / f"{d.id}.docx", src_dir=a.src, revisions=revs)
         print("出力:", out / f"{d.id}.docx")
     return 0
 
@@ -157,6 +175,7 @@ def main(argv=None):
     p.add_argument("src")
     p.add_argument("-o", "--out", default="out")
     p.add_argument("--doc", help="この文書IDだけ出力する（例 kiyaku）")
+    p.add_argument("--book", action="store_true", help="一冊の管理規約として出力する（構成は src/book.txt）")
     p = sub.add_parser("compare")
     p.add_argument("old")
     p.add_argument("new")

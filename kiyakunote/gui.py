@@ -19,7 +19,7 @@ from .render import article_text, render_doc
 from .search import build_index, doc_order, excerpt, find_spans, norm, plain, refs_of, search
 from . import APP_DESCRIPTION, APP_NAME, __version__
 from .versions import ROOT, load_revisions, load_version
-from . import endmatter, gitops, mdedit, settings
+from . import book, endmatter, gitops, mdedit, settings
 from .gui_style import Styler
 
 WORK = "作業中の src/（未確定の編集を含む）"
@@ -1009,7 +1009,17 @@ class App(tk.Tk):
         self.out_doc = ttk.Combobox(row, state="readonly", width=40)
         self.out_doc.pack(side="left", padx=6)
         ttk.Button(row, text="Wordで出力…", command=self.do_docx, style="Accent.TButton").pack(side="left", padx=10)
-        ttk.Label(box, text="番号は計算済み、参照は展開済み。別表・別紙（画像を含む）は規約の末尾に付きます。\n"
+        row2 = ttk.Frame(box)
+        row2.pack(fill="x", padx=10, pady=(0, 6))
+        self.out_separate = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row2, text="「（すべて）」のとき、一冊にまとめず、文書ごとの個別のファイルで出力する", variable=self.out_separate).pack(side="left")
+        row3 = ttk.Frame(box)
+        row3.pack(fill="x", padx=10, pady=(0, 6))
+        ttk.Button(row3, text="冊子の構成を編集…", command=self.edit_book).pack(side="left")
+        ttk.Label(row3, text="（「（すべて）」で一冊にまとめるときの、表紙・目次・中表紙・文書の順番）", style="Hint.TLabel").pack(side="left", padx=8)
+        ttk.Label(box, text="番号は計算済み、参照は展開済み。別表・別紙・別図（画像を含む）と、規約の巻末の改訂履歴・署名が付きます。\n"
+                            "「（すべて）」は、表紙・目次・中表紙（使用細則・細則・別表など）つきの一冊の管理規約になります（構成は「冊子の構成を編集…」）。\n"
+                            "目次のページ番号は、Wordで開いたときに「フィールドを更新しますか」と聞かれるので「はい」を選ぶと入ります。\n"
                             "整合性チェックでエラーがあると出力できません。",
                   style="Hint.TLabel").pack(anchor="w", padx=10, pady=(0, 6))
         self.docx_info = ttk.Label(box, text="", style="Hint.TLabel")
@@ -1035,18 +1045,58 @@ class App(tk.Tk):
         which = self.out_doc.get()
         docs = [d for d in sorted(self.reg.docs.values(), key=doc_order)
                 if d.kind not in APPENDIX_KINDS and (which == "（すべて）" or d.title == which)]
+        src_dir = getattr(self.reg, "src_dir", ROOT / "src")
+        whole = which == "（すべて）" and not self.out_separate.get()
+        plan = None
+        if whole:
+            try:
+                plan = self.book_plan()
+            except book.BookError as e:
+                messagebox.showerror("冊子の構成を読めません", str(e))
+                return
+            errs, notes = book.check_plan(self.reg, plan)
+            if errs:
+                messagebox.showerror("冊子の構成にエラーがあります", "\n".join(errs) + "\n\n「冊子の構成を編集…」で直してください。")
+                return
+            if notes and not messagebox.askyesno("冊子の構成の確認", "\n".join(notes) + "\n\nこのまま出力しますか？"):
+                return
         folder = filedialog.askdirectory(title="出力先のフォルダ")
         if not folder:
             return
-        from .docx_out import build_docx
+        from .docx_out import build_book, build_docx
         self.apply_docx_font()
-        src_dir = getattr(self.reg, "src_dir", ROOT / "src")
         revs = endmatter.history_for(load_revisions(), self.versions[self.ver.get()])
         self.busy("Wordを出力中…")
+        if whole:
+            main = next((d for d in self.reg.docs.values() if d.kind == "規約"), None)
+            path = Path(folder) / f"{main.title if main else '管理規約'}（全体）.docx"
+            build_book(self.reg, plan, path, src_dir=src_dir, revisions=revs)
+            self.done(f"一冊の管理規約を出力しました: {path}")
+            self.open_path(folder)
+            return
         for d in docs:
             build_docx(self.reg, d, Path(folder) / f"{d.title}.docx", src_dir=src_dir, revisions=revs)
         self.done(f"{len(docs)} 件を出力しました: {folder}")
         self.open_path(folder)
+
+    def effective_label(self):
+        """表示している版の施行日（「2026年6月1日」の形）。分からなければ空。"""
+        ref = self.versions[self.ver.get()]
+        revs = [r for r in load_revisions() if r.get("effective")]
+        me = next((r for r in revs if r.get("ref") == ref), None) if ref != "WORKTREE" else max(
+            (r for r in revs if r.get("ref")), key=lambda r: r["effective"], default=None)
+        if not me:
+            return ""
+        y, m, d = me["effective"].split("-")
+        return f"{int(y)}年{int(m)}月{int(d)}日"
+
+    def book_plan(self):
+        """冊子の構成。src/book.txt があればそれ、無ければ既定。"""
+        return book.plan_for(self.reg, getattr(self.reg, "src_dir", ROOT / "src"), self.effective_label())
+
+    def edit_book(self):
+        from .gui_appendix import BookEditDialog
+        BookEditDialog(self)
 
     # ---- 版の一覧 ----
     def _tab_rev(self):

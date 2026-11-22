@@ -61,7 +61,7 @@ class CellsTest(unittest.TestCase):
 
     def test_real_tables_invariants(self):
         tables = real_tables()
-        self.assertGreaterEqual(len(tables), 0)          # 公開版のサンプルには結合セルの表が少ない
+        self.assertGreaterEqual(len(tables), 0)
         for name, cells in tables:
             nr, nc = T.table_size(cells)
             self.assertIsNone(T.validate_cells(cells), name)
@@ -78,6 +78,49 @@ class CellsTest(unittest.TestCase):
             for c in {0, nc // 2, nc - 1} if nc > 1 else ():
                 x = T.delete_col(cells, c)
                 self.assertTrue(T.validate_cells(x) is None and T.table_size(x) == (nr, nc - 1), (name, c))
+
+
+class MergeTest(unittest.TestCase):
+    def test_merge_and_unmerge(self):
+        cells = T.parse_table(SAMPLE)
+        i = next(k for k, c in enumerate(cells) if c[4] == "a")
+        m = T.merge_right(cells, i)                                 # a と b を結合
+        self.assertIsNone(T.validate_cells(m))
+        self.assertEqual(next(c for c in m if c[4] == "a\nb")[3], 2)
+        j = next(k for k, c in enumerate(m) if c[4] == "a\nb")
+        u = T.unmerge(m, j)
+        self.assertIsNone(T.validate_cells(u))
+        self.assertEqual(len(u), len(cells))
+        k = next(k for k, c in enumerate(cells) if c[4] == "a")
+        d = T.merge_down(cells, k)                                  # a と c を結合
+        self.assertIsNone(T.validate_cells(d))
+        self.assertEqual(next(c for c in d if c[4] == "a\nc")[2], 2)
+
+    def test_merge_refused(self):
+        cells = T.parse_table(SAMPLE)
+        tall = next(k for k, c in enumerate(cells) if c[4] == "縦")
+        with self.assertRaises(ValueError):                         # 縦（2行）の右は a（1行）なので高さが違う
+            T.merge_right(cells, tall)
+        d = next(k for k, c in enumerate(cells) if c[4] == "d")
+        with self.assertRaises(ValueError):
+            T.merge_right(cells, d)                                 # 右端
+        with self.assertRaises(ValueError):
+            T.unmerge(cells, d)                                     # 結合されていない
+
+    def test_real_tables(self):
+        for name, cells in real_tables():
+            for i in range(len(cells)):
+                for fn in (T.merge_right, T.merge_down):
+                    try:
+                        x = fn(cells, i)
+                    except ValueError:
+                        continue
+                    self.assertIsNone(T.validate_cells(x), name)
+                    self.assertEqual(T.table_size(x), T.table_size(cells), name)
+                if cells[i][2] > 1 or cells[i][3] > 1:
+                    x = T.unmerge(cells, i)
+                    self.assertIsNone(T.validate_cells(x), name)
+                    self.assertEqual(T.table_size(x), T.table_size(cells), name)
 
 
 class XlsxTest(unittest.TestCase):

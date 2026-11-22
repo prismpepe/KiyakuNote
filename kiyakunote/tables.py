@@ -299,3 +299,46 @@ def fill_holes(cells):
     nrows, ncols = table_size(cells)
     taken = {(r + dr, c + dc) for r, c, rs, cs, *_ in cells for dr in range(rs) for dc in range(cs)}
     return list(cells) + [(r, c, 1, 1, "", False) for r in range(nrows) for c in range(ncols) if (r, c) not in taken]
+
+
+# ---- セルの結合・結合の解除 ----
+def _join_text(a, b):
+    return "\n".join(x for x in (a, b) if x)
+
+
+def merge_right(cells, i):
+    """i 番目のセルを、右隣のセルと結合する。右隣が同じ高さの1つのセルであるときだけできる。"""
+    r, c, rs, cs, t, th = cells[i]
+    nxt = [k for k, x in enumerate(cells) if x[0] == r and x[1] == c + cs]
+    if not nxt:
+        raise ValueError("右にセルがありません")
+    r2, c2, rs2, cs2, t2, th2 = cells[nxt[0]]
+    if rs2 != rs:
+        raise ValueError("右のセルと高さ（行の数）が違うので、結合できません")
+    out = [x for k, x in enumerate(cells) if k not in (i, nxt[0])]
+    out.append((r, c, rs, cs + cs2, _join_text(t, t2), th or th2))
+    return out
+
+
+def merge_down(cells, i):
+    """i 番目のセルを、下のセルと結合する。下が同じ幅の1つのセルであるときだけできる。"""
+    r, c, rs, cs, t, th = cells[i]
+    nxt = [k for k, x in enumerate(cells) if x[1] == c and x[0] == r + rs]
+    if not nxt:
+        raise ValueError("下にセルがありません")
+    r2, c2, rs2, cs2, t2, th2 = cells[nxt[0]]
+    if cs2 != cs:
+        raise ValueError("下のセルと幅（列の数）が違うので、結合できません")
+    out = [x for k, x in enumerate(cells) if k not in (i, nxt[0])]
+    out.append((r, c, rs + rs2, cs, _join_text(t, t2), th or th2))
+    return out
+
+
+def unmerge(cells, i):
+    """i 番目のセルの結合を解除する（文字は左上のセルに残す）。"""
+    r, c, rs, cs, t, th = cells[i]
+    if rs == 1 and cs == 1:
+        raise ValueError("このセルは結合されていません")
+    out = [x for k, x in enumerate(cells) if k != i]
+    out += [(r + dr, c + dc, 1, 1, t if (dr, dc) == (0, 0) else "", th) for dr in range(rs) for dc in range(cs)]
+    return out

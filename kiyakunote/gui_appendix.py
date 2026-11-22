@@ -41,6 +41,12 @@ class TableEditDialog(tk.Toplevel):
         for text, cmd in (("行を上に追加", lambda: self.add_row(False)), ("行を下に追加", lambda: self.add_row(True)), ("行を削除", self.del_row),
                           ("列を左に追加", lambda: self.add_col(False)), ("列を右に追加", lambda: self.add_col(True)), ("列を削除", self.del_col)):
             ttk.Button(bar, text=text, command=cmd).pack(side="left", padx=3)
+        mb = ttk.Frame(self)
+        mb.pack(fill="x", padx=10, pady=2)
+        ttk.Label(mb, text="セルの結合:", style="Hint.TLabel").pack(side="left", padx=(0, 6))
+        for text, cmd in (("右のセルと結合", lambda: self.merge(T.merge_right)), ("下のセルと結合", lambda: self.merge(T.merge_down)),
+                          ("結合を解除", lambda: self.merge(T.unmerge))):
+            ttk.Button(mb, text=text, command=cmd).pack(side="left", padx=3)
         xb = ttk.Frame(self)
         xb.pack(fill="x", padx=10, pady=2)
         ttk.Label(xb, text="Excel:", style="Hint.TLabel").pack(side="left", padx=(0, 6))
@@ -132,6 +138,10 @@ class TableEditDialog(tk.Toplevel):
             messagebox.showinfo("できません", str(e), parent=self)
             return
         self.set_cells(new)
+
+    def merge(self, fn):
+        """いま選んでいる枠を、右・下の枠と結合する／結合を解除する。"""
+        self.op(fn, self.cur)
 
     def add_row(self, below):
         r, _, rs, _, _, _ = self.cells[self.cur]
@@ -309,6 +319,81 @@ class SignEditDialog(tk.Toplevel):
         self.app.undo.append((self.path, old))
         self.destroy()
         self.app.after_appendix("@sign", "署名（奥書）を保存しました" if body.strip() else "署名（奥書）を空にしました")
+
+
+class BookEditDialog(tk.Toplevel):
+    """冊子（Word出力の「すべて」）の構成 src/book.txt を編集する。印刷専用で、条文には影響しない。"""
+
+    def __init__(self, app):
+        super().__init__(app)
+        from . import book
+        from .versions import ROOT
+        self.app, self.book = app, book
+        self.src = Path(getattr(app.reg, "src_dir", ROOT / "src"))
+        self.path = self.src / book.FILE
+        self.editable = app.versions[app.ver.get()] == "WORKTREE"
+        self.title("冊子の構成を編集" if self.editable else "冊子の構成（過去の版は見るだけ）")
+        self.geometry("900x640")
+        self.transient(app)
+        place_dialog(self, app)
+        ttk.Label(self, text="Word出力の「（すべて）」で、一冊にまとめるときの構成です。1行が1項目で、上から順に出力されます（# で始まる行は注釈）。\n"
+                             "表紙: 題名　／　目次　／　中表紙: 題名　／　文書: 文書ID　／　別表等: 文書ID（その文書の別表・別紙・別図）　／　改訂履歴　／　署名\n"
+                             "行を切り取って貼り付けると、順番を入れ替えられます。文書IDは、左の一覧の文書の ID です（kiyaku、bylaw-03 など）。",
+                  style="Hint.TLabel").pack(anchor="w", padx=10, pady=(10, 4))
+        self.text = app.styler.text_widget(self, "input", wrap="none", height=20)
+        sb = ttk.Scrollbar(self, command=self.text.yview)
+        self.text.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y", padx=(0, 10), pady=4)
+        self.text.pack(fill="both", expand=True, padx=(10, 0), pady=4)
+        self.known = ttk.Label(self, text="文書: " + "、".join(f"{d.id}＝{d.title}" for d in sorted(
+            (d for d in app.reg.docs.values() if d.kind not in ("別表", "別紙", "別図")), key=lambda d: d.id)), style="Hint.TLabel", wraplength=860)
+        bt = ttk.Frame(self)
+        bt.pack(fill="x", padx=10, pady=(4, 10), side="bottom", before=self.text)
+        self.known.pack(anchor="w", padx=10, pady=2, side="bottom", before=self.text)
+        if self.editable:
+            ttk.Button(bt, text="保存", command=self.save, style="Accent.TButton").pack(side="right")
+        ttk.Button(bt, text="閉じる" if not self.editable else "キャンセル", command=self.destroy).pack(side="right", padx=6)
+        if self.editable:
+            ttk.Button(bt, text="既定の構成にする", command=self.reset).pack(side="left")
+            ttk.Button(bt, text="確認", command=self.check).pack(side="left", padx=6)
+        self.text.insert("1.0", self.current_text())
+        if not self.editable:
+            self.text.configure(state="disabled")
+
+    def current_text(self):
+        if self.path.exists():
+            return self.path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+        return self.book.default_book_text(self.app.reg, self.app.effective_label())
+
+    def reset(self):
+        if messagebox.askyesno("既定の構成にする", "いまの内容を捨てて、文書から作る既定の構成にします。よろしいですか？", parent=self):
+            self.text.delete("1.0", "end")
+            self.text.insert("1.0", self.book.default_book_text(self.app.reg, self.app.effective_label()))
+
+    def check(self, quiet=False):
+        """内容を確かめる。問題がなければ True。"""
+        try:
+            plan = self.book.parse_book(self.text.get("1.0", "end"))
+        except self.book.BookError as e:
+            messagebox.showerror("読めません", str(e), parent=self)
+            return False
+        errs, notes = self.book.check_plan(self.app.reg, plan)
+        if errs:
+            messagebox.showerror("直してください", "\n".join(errs), parent=self)
+            return False
+        if not quiet:
+            messagebox.showinfo("確認", "問題はありません。" + ("\n\n注意:\n" + "\n".join(notes) if notes else ""), parent=self)
+        return True
+
+    def save(self):
+        if not self.check(quiet=True):
+            return
+        old = self.path.read_bytes() if self.path.exists() else None
+        body = self.text.get("1.0", "end").strip("\n") + "\n"
+        self.path.write_text(body, encoding="utf-8", newline="\n")
+        self.app.undo.append((self.path, old))
+        self.destroy()
+        self.app.done("冊子の構成を保存しました（src/book.txt）")
 
 
 class NewAppendixDialog(tk.Toplevel):
