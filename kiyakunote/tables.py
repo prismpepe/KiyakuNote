@@ -67,37 +67,41 @@ def parse_md_table(lines):
     return cells
 
 
-def split_body(raw):
-    """本文を、文章と表の並び [("text", 文字) / ("table", html) / ("mdtable", 行のリスト)] に分ける。"""
+def _pieces(raw):
+    """本文を (種類, 中身, 元の文字) に分ける。元の文字をつなぐと、本文にぴったり戻る。"""
     out, pos = [], 0
     for m in re.finditer(r"<table.*?</table>", raw, re.S):
-        if m.start() > pos:
-            out.extend(_split_md(raw[pos:m.start()]))
-        out.append(("table", m.group(0)))
+        out.extend(_pieces_md(raw[pos:m.start()]))
+        out.append(("table", m.group(0), m.group(0)))
         pos = m.end()
-    if pos < len(raw):
-        out.extend(_split_md(raw[pos:]))
+    out.extend(_pieces_md(raw[pos:]))
     return out
 
 
-def _split_md(text):
+def _pieces_md(text):
     out, buf, tab = [], [], []
-    for ln in text.split("\n"):
-        if MD_ROW.match(ln):
-            if buf:
-                out.append(("text", "\n".join(buf)))
-                buf = []
+
+    def flush(kind, lines):
+        if lines:
+            out.append((kind, [x.rstrip("\r\n") for x in lines] if kind == "mdtable" else "".join(lines), "".join(lines)))
+
+    for ln in text.splitlines(keepends=True):
+        if MD_ROW.match(ln.rstrip("\r\n")):
+            flush("text", buf)
+            buf = []
             tab.append(ln)
         else:
-            if tab:
-                out.append(("mdtable", tab))
-                tab = []
+            flush("mdtable", tab)
+            tab = []
             buf.append(ln)
-    if tab:
-        out.append(("mdtable", tab))
-    if buf:
-        out.append(("text", "\n".join(buf)))
+    flush("mdtable", tab)
+    flush("text", buf)
     return out
+
+
+def split_body(raw):
+    """本文を、文章と表の並び [("text", 文字) / ("table", html) / ("mdtable", 行のリスト)] に分ける。"""
+    return [(k, p) for k, p, _ in _pieces(raw)]
 
 
 def plain_text(s):
@@ -160,20 +164,138 @@ def list_tables(raw_body):
     return out
 
 
-def replace_table(raw_body, index, rows):
-    """本文の index 番目の表を、rows で置き換えた本文を返す（表の形式 Markdown / HTML は元のまま。表の外は変えない）。"""
-    parts, n = [], -1
-    for kind, chunk in split_body(raw_body):
+def _replace_nth(raw_body, index, make):
+    """本文の index 番目の表を、make(種類, 元の中身) の返す文字に置き換える。それ以外は元のまま（改行も含めてぴったり保つ）。"""
+    out, n = [], -1
+    for kind, payload, rawtext in _pieces(raw_body):
         if kind in ("table", "mdtable"):
             n += 1
             if n == index:
-                if kind == "table":
-                    hdr = 1 if re.search(r"<tr>\s*<th", chunk) else 0
-                    parts.append(render_html_table(rows, hdr))
-                else:
-                    parts.append(render_md_table(rows))
+                new = make(kind, payload)
+                if kind == "mdtable" and rawtext.endswith("\n"):
+                    new += "\r\n" if rawtext.endswith("\r\n") else "\n"
+                out.append(new)
                 continue
-            parts.append(chunk if kind == "table" else "\n".join(chunk))
+        out.append(rawtext)
+    if n < index:
+        raise IndexError("表がありません")
+    return "".join(out)
+
+
+def replace_table(raw_body, index, rows):
+    """本文の index 番目の表を、rows で置き換えた本文を返す（表の形式 Markdown / HTML は元のまま。表の外は変えない）。"""
+    def make(kind, payload):
+        if kind == "table":
+            return render_html_table(rows, 1 if re.search(r"<tr>\s*<th", payload) else 0)
+        return render_md_table(rows)
+    return _replace_nth(raw_body, index, make)
+
+
+# ---- 結合セルのある表の編集（セルの一覧 (行, 列, 行の幅, 列の幅, 文字, 見出しか) のまま扱う）----
+def table_size(cells):
+    """(行数, 列数)。"""
+    return (max((r + rs for r, _, rs, _, _, _ in cells), default=0),
+            max((c + cs for _, c, _, cs, _, _ in cells), default=0))
+
+
+def validate_cells(cells):
+    """セルが格子に重なりなく、すき間なく並んでいるか。問題があれば説明の文字、なければ None。"""
+    nrows, ncols = table_size(cells)
+    seen = {}
+    for i, (r, c, rs, cs, *_rest) in enumerate(cells):
+        if rs < 1 or cs < 1:
+            return "セルの幅が正しくありません"
+        for dr in range(rs):
+            for dc in range(cs):
+                if (r + dr, c + dc) in seen:
+                    return f"セルが重なっています（{r + dr + 1}行{c + dc + 1}列）"
+                seen[(r + dr, c + dc)] = i
+    for r in range(nrows):
+        for c in range(ncols):
+            if (r, c) not in seen:
+                return f"セルのない所があります（{r + 1}行{c + 1}列）"
+    return None
+
+
+def render_html_cells(cells):
+    """結合セルを保ったまま HTML の表にする（実データの別表の書式: <tr>…</tr> を改行でつなぐ）。"""
+    nrows, _ = table_size(cells)
+    rows = [[] for _ in range(nrows)]
+    for cell in sorted(cells, key=lambda x: (x[0], x[1])):
+        rows[cell[0]].append(cell)
+    lines = []
+    for row in rows:
+        out = []
+        for _, _, rs, cs, text, th in row:
+            tag = "th" if th else "td"
+            attr = (f' rowspan="{rs}"' if rs > 1 else "") + (f' colspan="{cs}"' if cs > 1 else "")
+            out.append(f"<{tag}{attr}>{html.escape(text, quote=False).replace(chr(10), '<br>')}</{tag}>")
+        lines.append("<tr>" + "".join(out) + "</tr>")
+    return "<table>" + "\n".join(lines) + "\n</table>"
+
+
+def _transpose(cells):
+    return [(c, r, cs, rs, t, th) for r, c, rs, cs, t, th in cells]
+
+
+def insert_row(cells, after, header=False):
+    """行 after（0始まり）の次に空の行を入れる。after=-1 なら先頭。またがっているセルは、その分だけ高くなる。"""
+    p = after + 1
+    nrows, ncols = table_size(cells)
+    out, covered = [], set()
+    for r, c, rs, cs, t, th in cells:
+        if r >= p:
+            out.append((r + 1, c, rs, cs, t, th))
+        elif r + rs > p:                                  # 入れる位置をまたぐセル
+            out.append((r, c, rs + 1, cs, t, th))
+            covered.update(range(c, c + cs))
         else:
-            parts.append(chunk)
-    return "\n".join(parts)
+            out.append((r, c, rs, cs, t, th))
+    out += [(p, c, 1, 1, "", header) for c in range(ncols) if c not in covered]
+    return out
+
+
+def delete_row(cells, r):
+    """行 r を消す。その行から始まる高いセルは、次の行から始まる（文字は残す）。最後の1行は消せない。"""
+    nrows, _ = table_size(cells)
+    if nrows <= 1:
+        raise ValueError("1行だけになるので、削除できません")
+    out = []
+    for r0, c, rs, cs, t, th in cells:
+        if r0 > r:
+            out.append((r0 - 1, c, rs, cs, t, th))
+        elif r0 <= r < r0 + rs:
+            if rs > 1:
+                out.append((r0, c, rs - 1, cs, t, th))      # 行が1つ減る（始まりの行なら、次の行が新しい始まり）
+        else:
+            out.append((r0, c, rs, cs, t, th))
+    return out
+
+
+def insert_col(cells, after):
+    """列 after の次に空の列を入れる。新しいセルは、左隣のセルが見出しなら見出しにする。"""
+    out = _transpose(insert_row(_transpose(cells), after))
+    p = after + 1
+    left = {(r, c): th for r, c, rs, cs, _, th in cells for r in range(r, r + rs) for c in range(c, c + cs)}
+    return [(r, c, rs, cs, "", left.get((r, after), False)) if c == p else (r, c, rs, cs, t, th)
+            for r, c, rs, cs, t, th in out]
+
+
+def delete_col(cells, c):
+    return _transpose(delete_row(_transpose(cells), c))
+
+
+def replace_table_cells(raw_body, index, cells):
+    """本文の index 番目の表を、結合セルを保ったまま cells で置き換える。Markdown の表は結合できないので、結合があれば HTML にする。"""
+    err = validate_cells(cells)
+    if err:
+        raise ValueError(err)
+    return _replace_nth(raw_body, index, lambda kind, _p: render_md_table(cells_to_rows(cells)) if kind == "mdtable" and not has_span(cells)
+                        else render_html_cells(cells))
+
+
+def fill_holes(cells):
+    """元の表で、セルが足りない所（行の途中で終わっている等）を、空のセルで埋める。表示は変わらない。"""
+    nrows, ncols = table_size(cells)
+    taken = {(r + dr, c + dc) for r, c, rs, cs, *_ in cells for dr in range(rs) for dc in range(cs)}
+    return list(cells) + [(r, c, 1, 1, "", False) for r in range(nrows) for c in range(ncols) if (r, c) not in taken]

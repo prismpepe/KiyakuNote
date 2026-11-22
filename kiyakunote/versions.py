@@ -139,15 +139,22 @@ def run_quiet(cmd, **kw):
 def load_version(ref, repo=ROOT):
     """git の参照（または WORKTREE）の src/ を読み込んで Registry にする。"""
     if ref == "WORKTREE":
-        return Registry(load_dir(repo / "src"))
+        reg = Registry(load_dir(repo / "src"))
+        reg.src_dir = Path(repo) / "src"
+        return reg
     names = run_quiet(["git", "ls-tree", "-r", "--name-only", ref, "src/"], cwd=repo,
                       check=True).stdout.decode("utf-8").split("\n")
     tmp = Path(tempfile.mkdtemp(prefix="kiyakunote-"))
     for n in names:
         n = n.strip().strip('"')
-        if not n.endswith(".md"):
+        if n.endswith(".md"):
+            dest = tmp / Path(n).name
+        elif n.startswith("src/assets/") or n == "src/okugaki.txt":      # 画像と奥書も取り出す（画面・Word出力で使う）
+            dest = tmp / n[len("src/"):]
+            dest.parent.mkdir(parents=True, exist_ok=True)
+        else:
             continue
-        data = run_quiet(["git", "show", f"{ref}:{n}"], cwd=repo, check=True).stdout
-        p = tmp / Path(n).name
-        p.write_bytes(data)
-    return Registry(load_dir(tmp))
+        dest.write_bytes(run_quiet(["git", "show", f"{ref}:{n}"], cwd=repo, check=True).stdout)
+    reg = Registry(load_dir(tmp))
+    reg.src_dir = tmp
+    return reg

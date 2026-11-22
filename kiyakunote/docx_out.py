@@ -16,6 +16,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
+from . import endmatter
 from .core import Heading, fw
 from .render import expand_text, first_referrer, item_numbers, marker, para_display
 
@@ -268,14 +269,33 @@ def write_appendix(doc, reg, parent, app, src_dir):
             para(doc, ln.strip())
 
 
-def build_docx(reg, d, path, src_dir="src"):
-    """文書 d を、その別表・別紙を付けて .docx に書く。"""
+def write_endmatter(doc, revs, src_dir):
+    """巻末: 改訂履歴の表と、理事長の署名（奥書）。"""
+    if revs:
+        doc.add_page_break()
+        para(doc, endmatter.HISTORY_TITLE, bold=True, size=12, after=6, keep=True)
+        rows = endmatter.history_rows(revs)
+        write_table(doc, [[Cell(txt, header=(i == 0)) for txt in row] for i, row in enumerate(rows)])
+    sign = endmatter.load_okugaki(src_dir)
+    if sign:
+        para(doc, "", after=12)
+        for i, s in enumerate(sign):
+            last = i == len(sign) - 1
+            for ln in s.split("\n"):
+                para(doc, ln, align=WD_ALIGN_PARAGRAPH.RIGHT if i > 0 else None, after=2 if not last else 0)
+            para(doc, "", after=6)
+
+
+def build_docx(reg, d, path, src_dir="src", revisions=None):
+    """文書 d を、その別表・別紙・別図を付けて .docx に書く。規約には、巻末に改訂履歴と署名（奥書）も付ける。"""
     doc = new_document(header=d.title)
     write_doc_body(doc, reg, d)
     for ent in d.meta.get("appendices", []):
         app = reg.docs.get(ent.partition(":")[0])
         if app:
             write_appendix(doc, reg, d, app, src_dir)
+    if d.kind == "規約":
+        write_endmatter(doc, revisions, src_dir)
     doc.save(str(path))
 
 

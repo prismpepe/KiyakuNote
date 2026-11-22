@@ -60,8 +60,16 @@ class SettingsDialog(tk.Toplevel):
                             "Wordに入っているフォント名を入れてください（例: MS 明朝、游明朝、メイリオ）。",
                   style="Hint.TLabel").grid(row=1, column=0, columnspan=5, sticky="w", pady=(6, 0))
         self.vars["docx_family"], self.vars["docx_size"] = dv, ds
+        box = ttk.LabelFrame(f, text="Markdownエディタ（外部アプリ。条文のファイルを開く）", padding=8)
+        box.grid(row=4, column=0, sticky="ew", pady=5)
+        mv = tk.StringVar(value=cfg["md_editor"])
+        ttk.Entry(box, textvariable=mv, width=58).grid(row=0, column=0, sticky="w")
+        ttk.Button(box, text="選ぶ…", command=lambda: self.pick_editor(mv)).grid(row=0, column=1, padx=6)
+        ttk.Label(box, text="Handy Markdown Editor の MarkdownEditor.exe などを指定します。空のときは、Windows の既定のアプリで開きます。",
+                  style="Hint.TLabel").grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.vars["md_editor"] = mv
         bt = ttk.Frame(f)
-        bt.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        bt.grid(row=5, column=0, sticky="ew", pady=(12, 0))
         ttk.Button(bt, text="保存して閉じる", command=self.ok, style="Accent.TButton").pack(side="right")
         ttk.Button(bt, text="適用", command=self.apply).pack(side="right", padx=6)
         ttk.Button(bt, text="標準に戻す", command=self.reset).pack(side="left")
@@ -69,6 +77,12 @@ class SettingsDialog(tk.Toplevel):
         self.before = dict(app.cfg)
         self.preview()
         self.grab_set()
+
+    def pick_editor(self, var):
+        from tkinter import filedialog
+        p = filedialog.askopenfilename(parent=self, title="Markdownエディタの実行ファイルを選ぶ", filetypes=[("実行ファイル", "*.exe"), ("すべて", "*.*")])
+        if p:
+            var.set(p)
 
     def values(self):
         d = {}

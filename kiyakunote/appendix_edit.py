@@ -7,7 +7,7 @@ import re
 import shutil
 from pathlib import Path
 
-from .tables import render_html_table, render_md_table, replace_table
+from .tables import render_html_table, render_md_table, replace_table, replace_table_cells
 
 KIND_PREFIX = {"別表": "tbl", "別紙": "app", "別図": "fig"}
 IMG = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
@@ -57,6 +57,17 @@ def save_table(path, index, rows):
     if not rows or not rows[0]:
         raise AppendixError("表には、1行1列以上が要ります")
     write(path, head, replace_table(body, index, rows))
+
+
+def save_table_cells(path, index, cells):
+    """index 番目の表を、結合セルを保ったセルの一覧で書き換える。"""
+    head, body = read(path)
+    if not cells:
+        raise AppendixError("表には、1行1列以上が要ります")
+    try:
+        write(path, head, replace_table_cells(body, index, cells))
+    except ValueError as e:
+        raise AppendixError(str(e)) from e
 
 
 # ---- 画像の差し替え ----

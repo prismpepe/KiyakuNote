@@ -11,6 +11,7 @@ DEFAULTS = {
     "text_family": "Yu Mincho", "text_size": 13,         # 条文・新旧対照表の表示欄
     "input_family": "Yu Gothic UI", "input_size": 12,    # 入力欄・編集フォーム
     "docx_family": "", "docx_size": 0,                   # Word出力（空・0 は従来どおり MS 明朝 10.5pt）
+    "md_editor": "",                                     # 外部の Markdown エディタの実行ファイル（空なら関連づけで開く）
 }
 LIMITS = {"ui_size": (9, 28), "text_size": (9, 36), "input_size": (9, 28), "docx_size": (0, 24)}
 
@@ -41,7 +42,7 @@ def clean(d):
             v = min(max(v, lo), hi)
         else:
             v = str(v).strip() if v is not None else default
-            if not v and k != "docx_family":
+            if not v and k not in ("docx_family", "md_editor"):
                 v = default
         out[k] = v
     return out

@@ -3,3 +3,4 @@ python-docx>=1.1
 # pytest
 # pyinstaller   （build_exe.py で exe を作るとき）
 # pillow        （tools/take_screenshots.py でスクリーンショットを撮るとき）
+openpyxl>=3.1

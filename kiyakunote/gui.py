@@ -19,7 +19,7 @@ from .render import article_text, render_doc
 from .search import build_index, doc_order, excerpt, find_spans, norm, plain, refs_of, search
 from . import APP_DESCRIPTION, APP_NAME, __version__
 from .versions import ROOT, load_revisions, load_version
-from . import gitops, settings
+from . import endmatter, gitops, mdedit, settings
 from .gui_style import Styler
 
 WORK = "作業中の src/（未確定の編集を含む）"
@@ -147,6 +147,7 @@ class App(tk.Tk):
         f = ttk.Frame(self.nb)
         bar = ttk.Frame(f)
         bar.pack(fill="x", pady=(6, 4))
+        ttk.Button(bar, text="Markdownエディタで開く…", command=self.open_md_editor).pack(side="right", padx=2)
         ttk.Button(bar, text="この条を変更…", command=self.edit_selected).pack(side="left", padx=2)
         ttk.Button(bar, text="条を新設…", command=self.new_article).pack(side="left", padx=2)
         ttk.Button(bar, text="この条を削除…", command=self.delete_selected).pack(side="left", padx=2)
@@ -206,6 +207,10 @@ class App(tk.Tk):
                     continue
                 label = f"{el.label}　削除" if el.deleted else f"{el.label}（{el.title}）" if el.title else el.label
                 self.tree.insert(parent, "end", iid=f"{d.id}|{el.id}", text=label)
+        if any(d.kind == "規約" for d in self.reg.docs.values()):          # 巻末: 改訂履歴・署名
+            self.tree.insert("", "end", iid="@history", text=f"{endmatter.HISTORY_TITLE}（巻末）")
+            if endmatter.load_okugaki(getattr(self.reg, "src_dir", ROOT / "src")):
+                self.tree.insert("", "end", iid="@sign", text=f"{endmatter.SIGN_TITLE}（巻末）")
 
     def set_text(self, widget, text):
         widget.config(state="normal")
@@ -264,6 +269,9 @@ class App(tk.Tk):
         iid = sel[0]
         if "|h|" in iid:
             return
+        if iid in ("@history", "@sign"):
+            self.show_endmatter(iid)
+            return
         if "|" not in iid:
             d = self.reg.docs[iid]
             if d.kind in APPENDIX_KINDS:
@@ -308,7 +316,54 @@ class App(tk.Tk):
                     if s.strip():
                         w.insert("end", s + "\n")
         else:
-            w.insert("end", "（画像のページです。Word出力でPDFのページ画像が付きます）\n" if "![" in d.raw_body else d.raw_body + "\n")
+            self.insert_images(w, d.raw_body)
+        w.config(state="disabled")
+        self.set_text(self.refs_box, "")
+
+    def insert_images(self, w, raw):
+        """本文の ![](画像) を画像として、それ以外の行は文字として、表示欄に入れる。"""
+        from . import appendix_edit as ae
+        base = Path(getattr(self.reg, "src_dir", ROOT / "src"))
+        self._imgs = []                                            # PhotoImage は持っていないと消えるので保持する
+        width = max(400, w.winfo_width() - 40)
+        for ln in raw.splitlines():
+            m = ae.IMG.fullmatch(ln.strip())
+            if not m:
+                if ln.strip():
+                    w.insert("end", ln + "\n")
+                continue
+            f = base / m.group(2)
+            try:
+                from PIL import Image, ImageTk
+                im = Image.open(f)
+                im.load()
+                if im.width > width:
+                    im = im.resize((width, max(1, round(im.height * width / im.width))), Image.LANCZOS)
+                ph = ImageTk.PhotoImage(im)
+            except Exception as e:                                  # noqa: BLE001
+                w.insert("end", f"（画像を表示できません: {m.group(2)}　{e}）\n")
+                continue
+            self._imgs.append(ph)
+            w.image_create("end", image=ph, padx=2, pady=6)
+            w.insert("end", "\n")
+
+    def show_endmatter(self, iid):
+        """巻末の項目（改訂履歴・理事長の署名）を表示する。"""
+        from .gui_table import table_frame
+        w = self.body
+        w.config(state="normal")
+        w.delete("1.0", "end")
+        if iid == "@history":
+            w.insert("end", endmatter.HISTORY_TITLE + "\n", ("h2",))
+            revs = endmatter.history_for(load_revisions(), self.versions[self.ver.get()])
+            wheel = lambda e: w.yview_scroll(-1 if e.delta > 0 else 1, "units")             # noqa: E731
+            fr = table_frame(w, endmatter.history_cells(revs), self.styler.f_ui, self.styler.f_ui_bold, wheel)
+            w.window_create("end", window=fr, padx=2, pady=6)
+            w.insert("end", "\n")
+        else:
+            w.insert("end", endmatter.SIGN_TITLE + "\n", ("h2",))
+            for para in endmatter.load_okugaki(getattr(self.reg, "src_dir", ROOT / "src")):
+                w.insert("end", para + "\n\n")
         w.config(state="disabled")
         self.set_text(self.refs_box, "")
 
@@ -316,6 +371,8 @@ class App(tk.Tk):
     def selected_article(self):
         """ツリーで選んでいる条を (文書ID, Article) で返す。条でなければ (文書ID, None)。"""
         sel = self.tree.selection()
+        if sel and sel[0].startswith("@"):
+            return None, None
         if not sel or "|h|" in sel[0]:
             return (sel[0].split("|")[0] if sel else None), None
         if "|" not in sel[0]:
@@ -419,6 +476,54 @@ class App(tk.Tk):
             return
         self.undo.append((path, old))
         self.after_appendix(d.id, f"{label}を削除しました")
+
+    def open_md_editor(self):
+        """選んでいる項目のファイルを、外部の Markdown エディタで開く。保存されたら自動で読み直す。"""
+        if not self.can_edit():
+            return
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showinfo("Markdownエディタで開く", "左の一覧で、開く項目（文書・条・別表など）を選んでください。")
+            return
+        src_dir = getattr(self.reg, "src_dir", ROOT / "src")
+        path = mdedit.file_for_node(sel[0], self.reg, src_dir)
+        if path is None or not path.exists():
+            messagebox.showinfo("Markdownエディタで開く", "この項目に対応するファイルがありません。")
+            return
+        editor = mdedit.resolve_editor(self.cfg["md_editor"])
+        try:
+            mdedit.open_file(path, editor)
+        except OSError as e:
+            messagebox.showerror("開けません", str(e))
+            return
+        self.watch = (path, path.stat().st_mtime, sel[0])
+        self.done(f"{path.name} を{'Markdownエディタ' if editor else '既定のアプリ'}で開きました。保存すると自動で読み直します")
+        if not getattr(self, "_polling", False):
+            self._polling = True
+            self.after(1500, self.poll_watch)
+
+    def poll_watch(self):
+        w = getattr(self, "watch", None)
+        if not w:
+            self._polling = False
+            return
+        path, mtime, iid = w
+        try:
+            now = path.stat().st_mtime
+        except OSError:
+            self.watch = None
+            self._polling = False
+            return
+        if now != mtime:
+            self.watch = (path, now, iid)
+            self.load_version()
+            if self.tree.exists(iid):
+                self.tree.selection_set(iid)
+                self.tree.see(iid)
+                self.on_tree()
+            self.update_git_state()
+            self.done(f"{path.name} の変更を読み込みました")
+        self.after(1500, self.poll_watch)
 
     def can_edit(self):
         if self.versions[self.ver.get()] != "WORKTREE":
@@ -810,23 +915,13 @@ class App(tk.Tk):
             return
         from .docx_out import build_docx
         self.apply_docx_font()
-        src_dir = ROOT / "src"
-        if self.versions[self.ver.get()] != "WORKTREE":
-            src_dir = self.tmp / "assets-src"
-            src_dir.mkdir(exist_ok=True)
-            self._copy_assets(src_dir)
+        src_dir = getattr(self.reg, "src_dir", ROOT / "src")
+        revs = endmatter.history_for(load_revisions(), self.versions[self.ver.get()])
         self.busy("Wordを出力中…")
         for d in docs:
-            build_docx(self.reg, d, Path(folder) / f"{d.title}.docx", src_dir=src_dir)
+            build_docx(self.reg, d, Path(folder) / f"{d.title}.docx", src_dir=src_dir, revisions=revs)
         self.done(f"{len(docs)} 件を出力しました: {folder}")
         self.open_path(folder)
-
-    def _copy_assets(self, dest):
-        """過去の版の画像は gitから取り出す。無ければ作業中のsrc/の画像を使う。"""
-        import shutil
-        src = ROOT / "src" / "assets"
-        if src.exists():
-            shutil.copytree(src, dest / "assets", dirs_exist_ok=True)
 
     # ---- 版の一覧 ----
     def _tab_rev(self):
