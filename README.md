@@ -1,6 +1,6 @@
 # 規約ノート（KiyakuNote）
 
-**マンション管理規約 編集・改正履歴管理システム** — バージョン 1.1
+**マンション管理規約 編集・改正履歴管理システム** — バージョン 1.2
 
 マンション管理規約（細則・使用細則を含む）を **Markdown + git** で管理し、条文の追加・削除・変更、
 **新旧対照表の自動生成**、**参照条項の自動更新**、検索、Word 出力ができる、Windows 向けのオープンソースのツールです。
@@ -23,7 +23,7 @@
 
 ## ダウンロード
 
-[Releases](https://github.com/prismpepe/KiyakuNote/releases) の `KiyakuNote-1.1-win.zip`（Windows 用の exe 版。Python は不要）を展開して、
+[Releases](https://github.com/prismpepe/KiyakuNote/releases) の `KiyakuNote-1.2-win.zip`（Windows 用の exe 版。Python は不要）を展開して、
 `KiyakuNote\KiyakuNote.exe` を起動します。署名のない exe なので、初回は Windows の警告（SmartScreen）が出ることがあります
 （「詳細情報」→「実行」）。ソースから動かすときは下の「クイックスタート」です。
 過去の版（git のタグ）を使う機能は、リポジトリをクローンしたときに使えます（exe 版の zip には git の履歴が入っていません）。
@@ -83,7 +83,7 @@ python -m kiyakunote gui                                 # 画面を開く（run
 ```bash
 python -m pytest -q          # テスト
 python build_exe.py          # 手元で使う exe を作る（PyInstaller が必要）
-python build_release.py      # 配布版 dist/KiyakuNote-1.1-win.zip を作る（build_release.bat でも可）
+python build_release.py      # 配布版 dist/KiyakuNote-1.2-win.zip を作る（build_release.bat でも可）
 python tools/take_screenshots.py   # docs/images/ のスクリーンショットを作り直す（Pillow が必要）
 ```
 
