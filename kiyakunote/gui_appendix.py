@@ -23,7 +23,7 @@ class TableEditDialog(tk.Toplevel):
         self.geometry("1040x660")
         self.transient(app)
         place_dialog(self, app)
-        self.tables = T.list_tables(doc.raw_body)
+        self.tables = self.get_tables()
         self.xlsx = None                                   # 「Excelで編集」で作った一時ファイル
         self.cells, self.entries, self.cur = [], [], 0
         top = ttk.Frame(self)
@@ -70,6 +70,12 @@ class TableEditDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.load()
 
+    def entry_width(self, c, cs):
+        return max(8, min(30, 10 * cs + 6))
+
+    def get_tables(self):
+        return T.list_tables(self.doc.raw_body)
+
     def wheel(self, ev):
         self.canvas.yview_scroll(-1 if ev.delta > 0 else 1, "units")
 
@@ -89,7 +95,7 @@ class TableEditDialog(tk.Toplevel):
             w.destroy()
         self.entries = []
         for i, (r, c, rs, cs, text, th) in enumerate(self.cells):
-            e = tk.Entry(self.inner, width=max(8, min(30, 10 * cs + 6)), font=self.app.styler.f_input, relief="solid", borderwidth=1,
+            e = tk.Entry(self.inner, width=self.entry_width(c, cs), font=self.app.styler.f_input, relief="solid", borderwidth=1,
                          background="#dbe5f1" if th else "#ffffff")
             e.insert(0, text.replace("\n", NL))
             e.grid(row=r, column=c, rowspan=rs, columnspan=cs, sticky="nsew")
@@ -220,6 +226,89 @@ class TableEditDialog(tk.Toplevel):
         self.app.undo.append((path, old))
         self.close()
         self.app.after_appendix(self.doc.id, "表を保存しました")
+
+
+class HistoryEditDialog(TableEditDialog):
+    """改訂履歴（src/revisions.yaml）を表として編集する。列: 総会日・施行日・版のタグ・備考・改定内容（1行に1件。↵ で区切る）。"""
+    HEAD = ["総会決議日", "施行日", "版のタグ（条文を持つ版）", "備考", "改定内容（↵ で区切る）"]
+
+    def __init__(self, app):
+        from types import SimpleNamespace
+        from .versions import ROOT
+        self.path = Path(getattr(app.reg, "src_dir", ROOT / "src")) / "revisions.yaml"
+        super().__init__(app, SimpleNamespace(title="改訂履歴", id="revisions", path=str(self.path), raw_body=""))
+        self.title("改訂履歴を編集（日付は 2026-04-19 の形。版のタグは条文を持つ版だけ）")
+
+    def entry_width(self, c, cs):
+        return 70 if c == 4 else 22 if c == 3 else 16
+
+    def get_tables(self):
+        from .versions import load_revisions
+        revs = load_revisions(self.path)
+        rows = [list(self.HEAD)]
+        for r in revs:
+            rows.append([r.get("resolution", ""), r.get("effective", ""), r.get("ref", ""), "\n".join(r.get("notes", [])), "\n".join(r.get("changes", []))])
+        return [{"cells": [(i, c, 1, 1, t, i == 0) for i, row in enumerate(rows) for c, t in enumerate(row)]}]
+
+    def save(self):
+        import re
+        from .versions import dump_revisions
+        if not self.cells:
+            self.close()
+            return
+        self.sync()
+        rows = T.cells_to_rows(self.cells)[1:]
+        revs = []
+        for n, row in enumerate(rows, 2):
+            res, eff, ref, note, changes = (x.strip() for x in row)
+            if not (res or eff or ref or note or changes):
+                continue                                                       # 空の行は無視
+            for label, v in (("総会決議日", res), ("施行日", eff)):
+                if v and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+                    messagebox.showerror("保存できません", f"{n}行目の{label}「{v}」は、2026-04-19 の形で書いてください。", parent=self)
+                    return
+            if not res:
+                messagebox.showerror("保存できません", f"{n}行目に総会決議日がありません。", parent=self)
+                return
+            revs.append({"resolution": res, "effective": eff, "ref": ref, "notes": [x.strip() for x in note.split("\n") if x.strip()],
+                         "changes": [x.strip().lstrip("・").strip() for x in changes.split("\n") if x.strip()]})
+        old = self.path.read_bytes()
+        self.path.write_text(dump_revisions(revs), encoding="utf-8", newline="\n")
+        self.app.undo.append((self.path, old))
+        self.close()
+        self.app.after_appendix("@history", "改訂履歴を保存しました")
+
+
+class SignEditDialog(tk.Toplevel):
+    """理事長の署名（奥書、src/okugaki.txt）を編集する。空行で段落を分ける。"""
+
+    def __init__(self, app):
+        super().__init__(app)
+        from .versions import ROOT
+        self.app = app
+        self.path = Path(getattr(app.reg, "src_dir", ROOT / "src")) / "okugaki.txt"
+        self.title("理事長の署名（奥書）を編集")
+        self.geometry("760x420")
+        self.transient(app)
+        place_dialog(self, app)
+        ttk.Label(self, text="規約の巻末に付く文章です。空行で段落を分けます（最後の段落ほど右寄せで Word に出ます）。\n"
+                             "例: 証明の文 → 空行 → 日付 → 空行 → 管理組合名・理事長名・印", style="Hint.TLabel").pack(anchor="w", padx=10, pady=(10, 4))
+        self.text = app.styler.text_widget(self, "input", wrap="char", height=10)
+        self.text.pack(fill="both", expand=True, padx=10, pady=4)
+        if self.path.exists():
+            self.text.insert("1.0", self.path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").rstrip("\n"))
+        bt = ttk.Frame(self)
+        bt.pack(fill="x", padx=10, pady=(0, 10))
+        ttk.Button(bt, text="保存", command=self.save, style="Accent.TButton").pack(side="right")
+        ttk.Button(bt, text="キャンセル", command=self.destroy).pack(side="right", padx=6)
+
+    def save(self):
+        body = self.text.get("1.0", "end").strip("\n")
+        old = self.path.read_bytes() if self.path.exists() else None
+        self.path.write_text(body + "\n" if body.strip() else "", encoding="utf-8", newline="\n")
+        self.app.undo.append((self.path, old))
+        self.destroy()
+        self.app.after_appendix("@sign", "署名（奥書）を保存しました" if body.strip() else "署名（奥書）を空にしました")
 
 
 class NewAppendixDialog(tk.Toplevel):

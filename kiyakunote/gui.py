@@ -152,7 +152,7 @@ class App(tk.Tk):
         ttk.Button(bar, text="条を新設…", command=self.new_article).pack(side="left", padx=2)
         ttk.Button(bar, text="この条を削除…", command=self.delete_selected).pack(side="left", padx=2)
         ttk.Button(bar, text="直前の保存を元に戻す", command=self.undo_last).pack(side="left", padx=14)
-        ttk.Label(bar, text="（編集は「作業中の src/」を表示しているときだけできます）", style="Hint.TLabel").pack(side="left")
+        ttk.Label(bar, text="（編集は「作業中の src/」のときだけ）", style="Hint.TLabel").pack(side="left")
         bar2 = ttk.Frame(f)
         bar2.pack(fill="x", pady=(0, 4))
         ttk.Label(bar2, text="別表・別紙・別図:", style="Hint.TLabel").pack(side="left", padx=(4, 6))
@@ -160,7 +160,9 @@ class App(tk.Tk):
         ttk.Button(bar2, text="画像を差し替え…", command=self.appendix_replace_image).pack(side="left", padx=2)
         ttk.Button(bar2, text="新設…", command=self.appendix_new).pack(side="left", padx=2)
         ttk.Button(bar2, text="削除…", command=self.appendix_delete).pack(side="left", padx=2)
-        ttk.Label(bar2, text="（左の一覧で別表・別紙・別図を選んでから）", style="Hint.TLabel").pack(side="left", padx=8)
+        ttk.Label(bar2, text="（先に左の一覧で選ぶ）", style="Hint.TLabel").pack(side="left", padx=6)
+        ttk.Button(bar2, text="改訂履歴を編集…", command=self.edit_history).pack(side="left", padx=(14, 2))
+        ttk.Button(bar2, text="署名を編集…", command=self.edit_sign).pack(side="left", padx=2)
         pw = ttk.PanedWindow(f, orient="horizontal")
         pw.pack(fill="both", expand=True)
         left = ttk.Frame(pw)
@@ -404,6 +406,16 @@ class App(tk.Tk):
         self.done(f"{msg}。整合性チェック: エラー {e} 件、警告 {len(found) - e} 件" + ("（「整合性チェック」タブで確認してください）" if e else ""))
         if e:
             self.do_lint()
+
+    def edit_history(self):
+        if self.can_edit():
+            from .gui_appendix import HistoryEditDialog
+            HistoryEditDialog(self)
+
+    def edit_sign(self):
+        if self.can_edit():
+            from .gui_appendix import SignEditDialog
+            SignEditDialog(self)
 
     def appendix_edit_table(self):
         if not self.can_edit():
