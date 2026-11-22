@@ -463,7 +463,6 @@ def build_book(reg, plan, path, src_dir="src", revisions=None, title=""):
             first_part = False
             para(doc, "目　次", WD_ALIGN_PARAGRAPH.CENTER, size=15, bold=True, before=6, after=12)
             field_paragraphs(doc, 'TOC \\u \\h \\z', toc)
-            _add_update_fields(doc)
         elif key == "中表紙":
             if not first_part:
                 start_part(doc, "")
@@ -500,18 +499,3 @@ def build_book(reg, plan, path, src_dir="src", revisions=None, title=""):
             write_signature(doc, src_dir)
         prev = key
     doc.save(str(path))
-
-
-def _add_update_fields(doc):
-    """Wordで開いたときに、目次のページ番号を更新する確認が出る設定（設定ファイルの決まった位置に入れる）。"""
-    st = doc.settings.element
-    if st.find(qn("w:updateFields")) is not None:
-        return
-    el = OxmlElement("w:updateFields")
-    el.set(qn("w:val"), "true")
-    for tag in ("w:hdrShapeDefaults", "w:footnotePr", "w:endnotePr", "w:compat", "w:docVars", "w:rsids"):
-        found = st.find(qn(tag))
-        if found is not None:
-            found.addprevious(el)
-            return
-    st.append(el)
